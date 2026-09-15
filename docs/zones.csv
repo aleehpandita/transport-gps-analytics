@@ -1,0 +1,28 @@
+id,name,time_from_airport_raw,time_from_airport_minutes,is_airport,requires_ferry_transfer,is_active
+1,Akumal,"1 hour and 30 minutes",90,false,false,true
+2,Boca Paila,"2 hours and 10 minutes",130,false,false,true
+3,Calica,"1 hour and 25 minutes",85,false,false,true
+4,Cancun,"40 minutes",40,true,false,true
+5,Chetumal,"5 hours and 30 minutes",330,false,false,true
+6,Chichen Itza,"2 hours and 30 minutes",150,false,false,true
+7,Chiquila,"2 hours",120,false,false,true
+8,Cozumel,"about 1 hour. We will transfer you to the ferry dock in Playa del Carmen",60,false,true,true
+9,Isla Mujeres,"50 minutes. We will transfer you to the ferry dock in Puerto Juarez.",50,false,true,true
+10,Maroma Beach,"45 minutes",45,false,false,true
+11,Merida,"4 hours",240,false,false,true
+12,Paamul,"1 hour and 20 minutes",80,false,false,true
+13,Paraiso Beach,"25 minutes",25,false,false,true
+14,Playa Del Carmen,"1 hour",60,false,false,true
+15,Playa Mujeres,"1 hour",60,false,false,true
+16,Playacar,"1 hour and 10 minutes",70,false,false,true
+17,Puerto Aventuras,"1 hour and 20 minutes",80,false,false,true
+18,Puerto Juarez,"45 minutes",45,false,false,true
+19,Puerto Morelos,"about 25 minutes",25,false,false,true
+20,Tankah,"1 hour and 50 minutes",110,false,false,true
+21,Tulum,"1 hour and 45 minutes",105,false,false,true
+22,Tulum Hotel Zone,"2 hours",120,false,false,true
+23,Valladolid,"2 hours and 15 minutes",135,false,false,true
+24,Xcaret,"1 hour and 10 minutes",70,false,false,true
+25,Xpu Ha,"1 hour and 40 minutes",100,false,false,true
+26,Kantenah,"1 hour and 30 minutes",90,false,false,true
+27,Costa Mujeres,"1 hour",60,false,false,true

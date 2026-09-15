@@ -1,0 +1,48 @@
+# Credenciales y entorno
+.env
+.env.*
+!.env.example
+
+# Laravel / PHP
+backend/vendor/
+backend/node_modules/
+backend/storage/*.key
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/logs/*
+backend/bootstrap/cache/*
+backend/.phpunit.result.cache
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Python / ML
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+*.egg-info/
+
+# Datasets pesados — no subir a git, solo referencias/muestras pequeñas
+data/raw/*
+data/processed/*
+data/synthetic/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/synthetic/.gitkeep
+*.csv
+!docs/*.csv
+
+# Modelos entrenados (pesados)
+ml/models/*.pkl
+ml/models/*.joblib
+ml/models/*.h5
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log
