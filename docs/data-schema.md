@@ -22,6 +22,41 @@ Notas:
 - El aeropuerto es la zona `Cancun` — no se crea una zona nueva para representarlo, se marca `is_airport = true` sobre la existente.
 - Para Cozumel e Isla Mujeres, el destino real de la telemetría GPS es el muelle de transferencia (Playa del Carmen / Puerto Juárez respectivamente), no la isla — el generador sintético y el trip builder deben tratarlo así.
 
+## Resolución de identificadores (`vehicles`)
+
+Decisión cerrada — no usar strings de negocio inventados (`FMC920_01`, `TIGUAN_01`). Se usan los identificadores reales de Traccar más un identificador propio:
+
+| Columna | Origen | Uso |
+|---|---|---|
+| `vehicle_id` (PK) | Interno, autoincremental | Usado por `trips` y `positions` para relacionarse. Nunca cambia aunque el hardware GPS cambie. |
+| `traccar_device_id` | `id` de Traccar (ej. `1`) | Se usa para consultar `/api/positions?deviceId=...` |
+| `imei` | `uniqueId` de Traccar (ej. `"863238071763025"`) | Dato de negocio, identifica el hardware físico |
+
+Un GPS puede moverse entre vehículos; por eso `positions`/`trips` nunca usan `traccar_device_id` directamente como llave de relación, solo `vehicle_id`.
+
+## `positions`
+
+Telemetría cruda, viene de Traccar (o del generador sintético, con el mismo esquema).
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | PK | |
+| `vehicle_id` | FK → vehicles.id | |
+| `traccar_position_id` | int, nullable | Nulo en registros sintéticos |
+| `latitude`, `longitude` | float | Grados decimales |
+| `altitude` | float | |
+| `speed` | float | **km/h** — Traccar regresa nudos (knots) en su API; se convierte al ingerir, nunca se guarda el valor crudo sin convertir |
+| `course` | float | |
+| `accuracy` | float, nullable | |
+| `ignition` | boolean, nullable | |
+| `motion` | boolean, nullable | |
+| `device_time` | datetime UTC | **Timestamp canónico** — momento real de captura del GPS (`deviceTime` de Traccar) |
+| `server_time` | datetime UTC | Solo referencia de latencia de red (`serverTime` de Traccar), no se usa para lógica de negocio |
+| `attributes` | JSON | Captura completa del payload crudo de Traccar sin filtrar — evita perder campos no anticipados (`odometer`, `satellites`, etc.) hasta confirmar qué expone realmente el FMC920 |
+| `data_source` | enum('real','synthetic') | |
+
+Pendiente de verificar con el primer payload real de `/api/positions`: contenido completo de `attributes`, frecuencia efectiva de posiciones (detenido vs. en movimiento), y si `ignition`/`motion` siempre vienen poblados. La estructura de columnas de arriba ya es definitiva; lo pendiente es solo confirmar qué trae `attributes`.
+
 ## `trips`
 
 Datos operativos observados — hechos, no derivaciones.
@@ -53,8 +88,27 @@ Generada por un pipeline de feature engineering a partir de `trips` — nunca se
 | `distance_km` | float | |
 | `origin_zone_id` | FK → zones.id | |
 | `destination_zone_id` | FK → zones.id | |
-| `previous_trip_duration` | int | Duración del viaje anterior del mismo vehículo — sí disponible al iniciar el viaje actual |
+| `previous_trip_duration` | int | **Definición cerrada:** duración del viaje inmediatamente anterior del mismo `vehicle_id`, ordenado por `actual_start`. No por conductor ni por corredor — esa granularidad la cubre `historical_corridor_mean_duration` por separado. |
 | `historical_corridor_mean_duration` | int | Promedio histórico del corredor origen-destino a esa hora |
+
+`trips.origin` / `trips.destination` (texto libre, dato operativo crudo del sistema de reservaciones) y `trip_features.origin_zone_id` / `destination_zone_id` (resuelto contra el catálogo `zones`, calculado en feature engineering) coexisten sin conflicto — no son la misma cosa ni se reemplazan entre sí.
+
+## Reglas globales
+
+| Regla | Decisión |
+|---|---|
+| Formato de fechas | ISO 8601 |
+| Zona horaria | UTC interno |
+| Velocidad | km/h (convertido desde knots de Traccar al ingerir) |
+| Coordenadas | Grados decimales |
+| Nulos | `null`, nunca cadena vacía |
+| IDs | Numéricos internos (ver "Resolución de identificadores") — nunca strings de negocio sueltos |
+| Booleanos | `true` / `false` / `null` |
+| Formato de entrenamiento | CSV/Parquet |
+| Target | `trip_duration_seconds` |
+| Datos sintéticos | Mismo esquema que los reales, `data_source = 'synthetic'` |
+| Filtrado por origen | Todo dataset de experimentación debe permitir filtrar explícitamente por `data_source` |
+| Evaluación final | Siempre con datos reales, nunca sintéticos |
 
 ## Regla estricta de data leakage
 
