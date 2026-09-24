@@ -6,6 +6,7 @@
 # Laravel / PHP
 backend/vendor/
 backend/node_modules/
+backend/database/database.sqlite
 backend/storage/*.key
 backend/storage/framework/cache/*
 backend/storage/framework/sessions/*

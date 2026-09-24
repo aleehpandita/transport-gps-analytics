@@ -48,14 +48,22 @@ Telemetría cruda, viene de Traccar (o del generador sintético, con el mismo es
 | `speed` | float | **km/h** — Traccar regresa nudos (knots) en su API; se convierte al ingerir, nunca se guarda el valor crudo sin convertir |
 | `course` | float | |
 | `accuracy` | float, nullable | |
-| `ignition` | boolean, nullable | |
-| `motion` | boolean, nullable | |
+| `ignition` | boolean, nullable | Traccar lo anida dentro de `attributes` — se extrae y promueve a esta columna en la ingesta |
+| `motion` | boolean, nullable | Igual que `ignition`, viene dentro de `attributes` en el payload real |
+| `valid` | boolean | Confiabilidad del fix de GPS según Traccar — filtrar antes de usar en trip builder o modelo de ML |
 | `device_time` | datetime UTC | **Timestamp canónico** — momento real de captura del GPS (`deviceTime` de Traccar) |
 | `server_time` | datetime UTC | Solo referencia de latencia de red (`serverTime` de Traccar), no se usa para lógica de negocio |
 | `attributes` | JSON | Captura completa del payload crudo de Traccar sin filtrar — evita perder campos no anticipados (`odometer`, `satellites`, etc.) hasta confirmar qué expone realmente el FMC920 |
 | `data_source` | enum('real','synthetic') | |
 
-Pendiente de verificar con el primer payload real de `/api/positions`: contenido completo de `attributes`, frecuencia efectiva de posiciones (detenido vs. en movimiento), y si `ignition`/`motion` siempre vienen poblados. La estructura de columnas de arriba ya es definitiva; lo pendiente es solo confirmar qué trae `attributes`.
+Pendiente de verificar con el primer payload real de `/api/positions`: contenido completo de `attributes`, frecuencia efectiva de posiciones (detenido vs. en movimiento), y si `ignition`/`motion` siempre vienen poblados.
+
+**Confirmado con payload real (2026-09-23):**
+- `ignition` y `motion` **no llegan como campos top-level de Traccar** — vienen anidados dentro de `attributes`. Se extraen ahí y se promueven a columnas propias de `positions` al momento de la ingesta (el `TraccarService`/sync job hace esta extracción); `attributes` se sigue guardando completo y sin filtrar de todos modos.
+- El payload real trae además: `odometer`, `totalDistance`, `power`, `battery`, `operator`, `rssi`, `priority`, `sat`, `event`, `hours`, e IDs de I/O específicos de Teltonika (`io200`, `io69`, `io68`) — todos se quedan dentro de `attributes`, no se promueven a columnas, no son necesarios para el trip builder ni el modelo de ETA.
+- **Pendiente:** `odometer` y `totalDistance` traen valores muy distintos entre sí en el primer payload (vehículo detenido) — no asumir que están en la misma unidad o representan lo mismo hasta verificar con un tramo en movimiento real.
+- Con el vehículo estacionado, Traccar reporta una posición aproximadamente cada hora (heartbeat), con `valid: false` y `accuracy: 0` — no representa la frecuencia real en movimiento. Falta confirmar el intervalo real con el vehículo circulando.
+- Se agrega la columna `valid` (boolean) a `positions` — Traccar la usa para indicar si el fix de GPS es confiable; crítico para que el trip builder y el modelo de ML puedan filtrar posiciones de fix inválido.
 
 ## `trips`
 
