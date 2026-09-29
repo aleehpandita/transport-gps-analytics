@@ -19,7 +19,7 @@ Columnas:
 | `is_active` | boolean | Heredado del catálogo original |
 
 Notas:
-- El aeropuerto es la zona `Cancun` — no se crea una zona nueva para representarlo, se marca `is_airport = true` sobre la existente.
+- El aeropuerto es la zona `Cancun` (id 4) — no se crea una zona nueva para representarlo, se marca `is_airport = true` sobre la existente.
 - Para Cozumel e Isla Mujeres, el destino real de la telemetría GPS es el muelle de transferencia (Playa del Carmen / Puerto Juárez respectivamente), no la isla — el generador sintético y el trip builder deben tratarlo así.
 
 ## Resolución de identificadores (`vehicles`)
@@ -56,14 +56,11 @@ Telemetría cruda, viene de Traccar (o del generador sintético, con el mismo es
 | `attributes` | JSON | Captura completa del payload crudo de Traccar sin filtrar — evita perder campos no anticipados (`odometer`, `satellites`, etc.) hasta confirmar qué expone realmente el FMC920 |
 | `data_source` | enum('real','synthetic') | |
 
-Pendiente de verificar con el primer payload real de `/api/positions`: contenido completo de `attributes`, frecuencia efectiva de posiciones (detenido vs. en movimiento), y si `ignition`/`motion` siempre vienen poblados.
-
 **Confirmado con payload real (2026-09-23):**
-- `ignition` y `motion` **no llegan como campos top-level de Traccar** — vienen anidados dentro de `attributes`. Se extraen ahí y se promueven a columnas propias de `positions` al momento de la ingesta (el `TraccarService`/sync job hace esta extracción); `attributes` se sigue guardando completo y sin filtrar de todos modos.
-- El payload real trae además: `odometer`, `totalDistance`, `power`, `battery`, `operator`, `rssi`, `priority`, `sat`, `event`, `hours`, e IDs de I/O específicos de Teltonika (`io200`, `io69`, `io68`) — todos se quedan dentro de `attributes`, no se promueven a columnas, no son necesarios para el trip builder ni el modelo de ETA.
-- **Pendiente:** `odometer` y `totalDistance` traen valores muy distintos entre sí en el primer payload (vehículo detenido) — no asumir que están en la misma unidad o representan lo mismo hasta verificar con un tramo en movimiento real.
-- Con el vehículo estacionado, Traccar reporta una posición aproximadamente cada hora (heartbeat), con `valid: false` y `accuracy: 0` — no representa la frecuencia real en movimiento. Falta confirmar el intervalo real con el vehículo circulando.
-- Se agrega la columna `valid` (boolean) a `positions` — Traccar la usa para indicar si el fix de GPS es confiable; crítico para que el trip builder y el modelo de ML puedan filtrar posiciones de fix inválido.
+- El payload real trae además: `odometer`, `totalDistance`, `power`, `battery`, `operator`, `rssi`, `priority`, `sat`, `event`, `hours`, e IDs de I/O específicos de Teltonika (`io200`, `io69`, `io68`) — todos se quedan dentro de `attributes`, no se promueven a columnas.
+- **Pendiente:** `odometer` y `totalDistance` traen valores muy distintos entre sí en el primer payload (vehículo detenido) — no asumir que están en la misma unidad hasta verificar con un tramo en movimiento real.
+- Con el vehículo estacionado, Traccar reporta una posición aproximadamente cada hora (heartbeat), con `valid: false` y `accuracy: 0`.
+- Todo el sistema opera internamente en **UTC** — la hora de Cancún (UTC-5) se obtiene restando 5 horas; la conversión a hora local se hace únicamente en la capa de presentación (dashboard/reportes), nunca en lo almacenado.
 
 ## `trips`
 
@@ -101,16 +98,28 @@ Generada por un pipeline de feature engineering a partir de `trips` — nunca se
 
 `trips.origin` / `trips.destination` (texto libre, dato operativo crudo del sistema de reservaciones) y `trip_features.origin_zone_id` / `destination_zone_id` (resuelto contra el catálogo `zones`, calculado en feature engineering) coexisten sin conflicto — no son la misma cosa ni se reemplazan entre sí.
 
+## Regla estricta de data leakage
+
+El modelo baseline debe predecir la duración total del viaje **al momento de iniciarlo**.
+
+**Features permitidas (input del modelo):** `distance_km`, `hour_of_day`, `day_of_week`, `origin_zone_id`, `destination_zone_id`, `previous_trip_duration`, `historical_corridor_mean_duration`.
+
+**Nunca usar como input:** `average_speed`, `max_speed`, `stops_count`, `stopped_seconds` del viaje actual, `ended_at`, `duration_seconds`, o cualquier feature que dependa de eventos futuros al viaje. Estas sí se almacenan para EDA y para generar el target.
+
+## Baseline de referencia
+
+`zones.time_from_airport_minutes` sirve como baseline de negocio, pero **solo aplica a viajes donde uno de los dos extremos es el aeropuerto**. Para viajes zona-a-zona no existe baseline de negocio.
+
 ## Reglas globales
 
 | Regla | Decisión |
 |---|---|
 | Formato de fechas | ISO 8601 |
-| Zona horaria | UTC interno |
+| Zona horaria | UTC interno (conversión a hora Cancún solo en presentación) |
 | Velocidad | km/h (convertido desde knots de Traccar al ingerir) |
 | Coordenadas | Grados decimales |
 | Nulos | `null`, nunca cadena vacía |
-| IDs | Numéricos internos (ver "Resolución de identificadores") — nunca strings de negocio sueltos |
+| IDs | Numéricos internos (ver "Resolución de identificadores") |
 | Booleanos | `true` / `false` / `null` |
 | Formato de entrenamiento | CSV/Parquet |
 | Target | `trip_duration_seconds` |
@@ -118,40 +127,36 @@ Generada por un pipeline de feature engineering a partir de `trips` — nunca se
 | Filtrado por origen | Todo dataset de experimentación debe permitir filtrar explícitamente por `data_source` |
 | Evaluación final | Siempre con datos reales, nunca sintéticos |
 
-## Regla estricta de data leakage
-
-El modelo baseline debe predecir la duración total del viaje **al momento de iniciarlo**. Por lo tanto, solo pueden usarse como input variables disponibles en ese instante.
-
-**Features permitidas (input del modelo):**
-- `distance_km`
-- `hour_of_day`
-- `day_of_week`
-- `origin_zone_id`
-- `destination_zone_id`
-- `previous_trip_duration`
-- `historical_corridor_mean_duration`
-
-**Nunca usar como input** (se conocen solo después de que el viaje termina o ya sucedió):
-- `average_speed`, `max_speed`, `stops_count`, `stopped_seconds` del viaje actual
-- `ended_at`, `duration_seconds` / `actual_duration`
-- cualquier feature que dependa de eventos futuros al viaje
-
-Estas variables sí se almacenan en `trips` para análisis descriptivo, EDA, reportes, y para generar el target (`duration_seconds`) — solo no deben entrar como input del modelo baseline.
-
-Si más adelante se implementa ETA dinámico (durante el viaje, no al iniciarlo), se trata como un problema de ML separado, con su propio conjunto de features.
-
-## Baseline de referencia
-
-`zones.time_from_airport_minutes` sirve como baseline de negocio ya validado por Feraltar, pero **solo aplica a viajes donde uno de los dos extremos es el aeropuerto**. Para viajes zona-a-zona no existe baseline de negocio — el modelo debe apoyarse en `distance_km`, `hour_of_day` e histórico del corredor.
-
 ## `TripBuilderService` (conceptual — a implementar en backend)
 
-Responsable de transformar una secuencia temporal de `positions` en registros de `trips`. Debe usar las mismas reglas tanto para posiciones reales (Traccar) como sintéticas, para que ambos datasets sean comparables.
+Responsable de transformar una secuencia temporal de `positions` en registros de `trips`. Debe usar las mismas reglas tanto para posiciones reales como sintéticas.
 
-Umbrales iniciales propuestos (ajustables, deben ser configurables — no hardcodeados):
+Umbrales iniciales (ajustables, deben ser configurables — no hardcodeados):
 
 - **Inicio de viaje:** `ignition = true` y velocidad sostenida > 0 por más de 30 segundos.
-- **Fin de viaje:** `ignition = false` sostenido por más de 5 minutos, o gap de reporte GPS mayor a 10 minutos.
-- **Parada intermedia (no cuenta como fin de viaje):** velocidad = 0 por más de 2 minutos con `ignition = true`.
+- **Fin de viaje:** `speed = 0` sostenido y `ignition` transiciona de `true` a `false`, con un margen de confirmación amplio (ver hallazgo de 2026-09-28 abajo — un margen corto de 1-2 min resultó insuficiente en la práctica).
+- **Parada intermedia (no cuenta como fin de viaje):** velocidad = 0 con `ignition = true` sostenido durante toda la parada.
 
-Estos umbrales se calibrarán con datos reales de la unidad piloto una vez que el backend esté sincronizando telemetría.
+**Calibrado con el primer viaje real completo (2026-09-25, 22:07-22:09 UTC — fin de viaje real):**
+- `ignition` resultó ser la señal más rápida y confiable para fin de viaje: pasó de `true` a `false` a los ~17 segundos de que `speed` llegó a 0, sin rebotar de vuelta a `true`.
+- `motion` **no es una señal instantánea** — tiene un retraso variable (~60-90s en este caso) respecto a `speed`/`ignition` (Traccar aplica su propio debounce interno). Se usa como señal secundaria/de respaldo, no primaria.
+- Después de `motion = false`, el heartbeat vuelve al patrón de ~1 posición/hora observado con el vehículo en reposo.
+
+**Calibrado con una parada intermedia real (2026-09-28, ~3 min 33 s en un cajero automático, con el vehículo circulando antes y después):**
+- `ignition` se mantuvo en `true` durante toda la parada, sin apagarse en ningún momento — esta es la señal clave que diferencia una parada intermedia de un fin de viaje real: en el fin de viaje calibrado previamente, `ignition` pasó a `false` a los ~17s y nunca regresó; aquí, con el motor sin apagar, `ignition` nunca varió.
+- `motion` sí reaccionó esta vez con solo ~12s de retraso (mucho más rápido que los ~60-90s observados en el caso de fin de viaje) — confirma que el retraso de `motion` es variable, no un valor fijo, y refuerza por qué no se usa como señal primaria en ningún escenario.
+- **Pendiente de confirmar:** si una transición de `ignition = false` de muy corta duración (segundos) puede corresponder también a una parada intermedia real (motor apagado brevemente, ej. un mandado corto) en vez de fin de viaje — de ser así, el margen de confirmación de 1-2 min antes de declarar fin de viaje es aún más necesario de lo que se pensaba. Caso detectado el 2026-09-28 a las 16:38:12 UTC, en observación.
+
+**Hallazgo crítico — corrección del umbral de fin de viaje (2026-09-28, parada de ~9 min con motor apagado):**
+
+El caso pendiente de arriba se resolvió, y corrige una asunción previa: `ignition` se apagó a los 8 segundos de detenerse (16:38:20) y permaneció apagado durante **casi 8 minutos** (hasta 16:46:15), tras lo cual el motor se reencendió y el viaje continuó normalmente. Esto invalida el margen de confirmación de "1-2 minutos" que se había propuesto — con ese umbral, el trip builder habría cortado este viaje en dos de forma incorrecta.
+
+Con los tres casos reales acumulados hasta ahora:
+
+| Caso | `ignition` apagado por | ¿Fin de viaje real? |
+|---|---|---|
+| Cajero (2026-09-28) | Nunca se apagó | No — parada intermedia |
+| Toks/gym (2026-09-28) | ~8 minutos | No — parada intermedia |
+| Fin de viaje (2026-09-25) | Más de 1.5 horas (nunca regresó) | Sí |
+
+**El umbral real de confirmación está en algún punto entre 8 minutos y 1.5 horas — todavía no acotado con precisión.** Punto de partida conservador mientras se recopilan más casos: **15-20 minutos** de `ignition = false` sostenido sin retomar movimiento, en vez de los 1-2 minutos originalmente propuestos. Debe seguir siendo configurable, no hardcodeado, y se ajustará con más datos reales de la unidad piloto.
