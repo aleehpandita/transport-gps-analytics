@@ -31,6 +31,14 @@ Dado un par de coordenadas (origen o destino de un `trip`), se determina la zona
 
 No se usan polígonos ni geocercas complejas — decisión consciente para mantener el MVP simple; suficiente porque la mayoría de las zonas están alineadas sobre una sola vía costera, no dispersas en un área 2D.
 
+**⚠️ PROVISIONAL — pendiente de reemplazo.** Investigación de campo real (choferes + operaciones, 2026-09-29) concluyó que el diseño final debe ser **point-in-polygon** (polígonos geográficos reales por zona), no puntos de frontera. Decisiones clave de esa investigación:
+- Zona geográfica ≠ zona tarifaria — la posición física se resuelve con polígonos; cada transportadora podrá mapear sus propias tarifas por separado (tabla futura, no construir hasta que haya necesidad real).
+- Prioridad para definir fronteras: coordenadas físicas → continuidad por carretera → límites de desarrollos/accesos → hoteles de referencia → experiencia de Operaciones → BD histórica de Cabsi (solo como referencia secundaria, no se copia automáticamente).
+- No dividir megacomplejos (Barceló, Grand Palladium, Bahía Príncipe) entre zonas distintas.
+- Varias fronteras siguen en definición; coordenadas y polígonos se calculan hasta que las fronteras estén estables — no antes.
+
+El enfoque de "punto + radio" documentado arriba se mantiene como fallback funcional mientras se cierra el diseño de polígonos, no como decisión final.
+
 Notas:
 - El aeropuerto es la zona `Cancun` (id 4) — no se crea una zona nueva para representarlo, se marca `is_airport = true` sobre la existente.
 - Para Cozumel e Isla Mujeres, el destino real de la telemetría GPS es el muelle de transferencia (Playa del Carmen / Puerto Juárez respectivamente), no la isla — el generador sintético y el trip builder deben tratarlo así.
