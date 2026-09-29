@@ -17,6 +17,19 @@ Columnas:
 | `is_airport` | boolean | `true` únicamente en la zona que representa el aeropuerto de Cancún |
 | `requires_ferry_transfer` | boolean | `true` para zonas donde el vehículo transfiere al pasajero a un muelle en vez de llegar directamente al destino (Cozumel, Isla Mujeres) |
 | `is_active` | boolean | Heredado del catálogo original |
+| `region` | string | Default `'Cancun-Riviera Maya'`. Permite distinguir zonas de distintas operaciones/regiones si el proyecto se expande a otras plazas (ej. Los Cabos) — decisión tomada para no acoplar el esquema a una sola región. |
+| `latitude` | float, nullable | Punto de referencia geográfico de la zona. Para zonas tipo "corredor" (la mayoría, sobre la carretera costera), es el punto de frontera donde empieza esa zona. Pendiente de llenar con referencias reales aportadas por alguien que conoce las zonas de operación (no coordenadas aproximadas/adivinadas). |
+| `longitude` | float, nullable | Igual que `latitude`. |
+| `geofence_radius_km` | float, nullable | Solo se llena para zonas tipo "área" (ej. Cancún, que no es un punto en una carretera sino toda una zona con aeropuerto + hotelera). Si tiene valor, el matching de zona usa "¿está a menos de X km del centro?"; si es `null`, usa "¿cuál es el punto de frontera más cercano?". |
+
+### Matching de zonas (asignar `origin_zone_id`/`destination_zone_id` a un trip)
+
+Dado un par de coordenadas (origen o destino de un `trip`), se determina la zona correspondiente así:
+
+1. Si existe una zona con `geofence_radius_km` no nulo y la coordenada cae dentro de ese radio (Haversine), se asigna esa zona (caso Cancún).
+2. Si no, se calcula la distancia Haversine contra el punto (`latitude`/`longitude`) de cada zona restante, y se asigna la más cercana.
+
+No se usan polígonos ni geocercas complejas — decisión consciente para mantener el MVP simple; suficiente porque la mayoría de las zonas están alineadas sobre una sola vía costera, no dispersas en un área 2D.
 
 Notas:
 - El aeropuerto es la zona `Cancun` (id 4) — no se crea una zona nueva para representarlo, se marca `is_airport = true` sobre la existente.

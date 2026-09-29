@@ -14,5 +14,9 @@ class Zone extends Model
         'is_airport',
         'requires_ferry_transfer',
         'is_active',
+        'region',
+        'latitude',
+        'longitude',
+        'geofence_radius_km',
     ];
 }
