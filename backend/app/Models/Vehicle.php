@@ -16,4 +16,8 @@ class Vehicle extends Model
         'model',
         'active',
     ];
+    public function positions(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Position::class);
+    }
 }
