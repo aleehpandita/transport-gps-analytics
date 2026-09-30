@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\VehicleController;
+use App\Http\Controllers\Api\ZoneController;
+
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('vehicles')->group(function () {
@@ -10,3 +12,5 @@ Route::prefix('vehicles')->group(function () {
     Route::get('/{vehicle}/positions', [VehicleController::class, 'positions']);
     Route::get('/{vehicle}/trips', [VehicleController::class, 'trips']);
 });
+
+Route::get('/zones', [ZoneController::class, 'index']);
