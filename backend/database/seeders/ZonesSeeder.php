@@ -25,6 +25,13 @@ class ZonesSeeder extends Seeder
                     'is_airport' => filter_var($zone['is_airport'], FILTER_VALIDATE_BOOLEAN),
                     'requires_ferry_transfer' => filter_var($zone['requires_ferry_transfer'], FILTER_VALIDATE_BOOLEAN),
                     'is_active' => filter_var($zone['is_active'], FILTER_VALIDATE_BOOLEAN),
+                    'region' => $zone['region'] ?: 'Cancun-Riviera Maya',
+                    'latitude' => $zone['latitude'] !== '' ? (float) $zone['latitude'] : null,
+                    'longitude' => $zone['longitude'] !== '' ? (float) $zone['longitude'] : null,
+                    'geofence_radius_km' => $zone['geofence_radius_km'] !== '' ? (float) $zone['geofence_radius_km'] : null,
+                    'geometry_type' => $zone['geometry_type'] ?: null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]
             );
         }
