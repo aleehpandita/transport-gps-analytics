@@ -31,13 +31,20 @@ Dado un par de coordenadas (origen o destino de un `trip`), se determina la zona
 
 No se usan polígonos ni geocercas complejas — decisión consciente para mantener el MVP simple; suficiente porque la mayoría de las zonas están alineadas sobre una sola vía costera, no dispersas en un área 2D.
 
-**⚠️ PROVISIONAL — pendiente de reemplazo.** Investigación de campo real (choferes + operaciones, 2026-09-29) concluyó que el diseño final debe ser **point-in-polygon** (polígonos geográficos reales por zona), no puntos de frontera. Decisiones clave de esa investigación:
-- Zona geográfica ≠ zona tarifaria — la posición física se resuelve con polígonos; cada transportadora podrá mapear sus propias tarifas por separado (tabla futura, no construir hasta que haya necesidad real).
-- Prioridad para definir fronteras: coordenadas físicas → continuidad por carretera → límites de desarrollos/accesos → hoteles de referencia → experiencia de Operaciones → BD histórica de Cabsi (solo como referencia secundaria, no se copia automáticamente).
-- No dividir megacomplejos (Barceló, Grand Palladium, Bahía Príncipe) entre zonas distintas.
-- Varias fronteras siguen en definición; coordenadas y polígonos se calculan hasta que las fronteras estén estables — no antes.
+**⚠️ SUPERADO por zonificación conceptual cerrada (2026-09-29).** Ver `docs/zonificacion-maestra.md` para el criterio completo (fronteras físicas, anclas hoteleras, reglas por zona). Este documento confirma point-in-polygon como diseño definitivo — ya no es una posibilidad a futuro. El esquema de `zones` se actualiza para soportar geometría real:
 
-El enfoque de "punto + radio" documentado arriba se mantiene como fallback funcional mientras se cierra el diseño de polígonos, no como decisión final.
+| Columna nueva | Tipo | Descripción |
+|---|---|---|
+| `geometry_type` | enum('Polygon','MultiPolygon','Point','DestinationArea') | Tipo de geometría según la naturaleza de la zona — corredor (Polygon), punto operativo como un muelle (Point), destino foráneo sin corredor hotelero (DestinationArea, ej. Chetumal/Mérida) |
+| `geometry` | JSON (GeoJSON) | La geometría real, usada por el motor de point-in-polygon. `null` hasta que se calculen las coordenadas. |
+| `north_boundary` / `south_boundary` | string, nullable | Referencia humana legible de la frontera (ej. "Hard Rock Riviera Maya"), para auditoría/soporte — no se usa en el cálculo, solo documentación. |
+| `reference_hotels` | JSON, nullable | Lista de hoteles/anclas usados como referencia para pruebas y QA del polígono. |
+
+Las columnas `latitude`/`longitude`/`geofence_radius_km` agregadas previamente se conservan como **fallback** mientras se calculan los polígonos reales — cuando una zona tiene `geometry` poblado, el matching usa point-in-polygon; si no, cae al fallback de punto más cercano.
+
+**Zonas confirmadas como tipo `Point` (no corredor):** Cozumel (muelle Playa del Carmen), Isla Mujeres (muelle Puerto Juárez), Calica (destino puntual).
+**Zonas confirmadas como tipo `DestinationArea` (polígono urbano simple, sin subdivisión hotelera):** Valladolid, Mérida, Chetumal, Chichén Itzá, Chiquilá.
+**Cancún es una sola zona** (ciudad + Zona Hotelera juntas, no separadas) — confirmado, coincide con el diseño ya implementado.
 
 Notas:
 - El aeropuerto es la zona `Cancun` (id 4) — no se crea una zona nueva para representarlo, se marca `is_airport = true` sobre la existente.

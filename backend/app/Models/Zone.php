@@ -18,5 +18,11 @@ class Zone extends Model
         'latitude',
         'longitude',
         'geofence_radius_km',
+        'geometry_type',
+        'geometry',
+        'north_boundary',
+        'south_boundary',
+        'reference_hotels',
+        'notes',
     ];
 }
