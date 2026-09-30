@@ -139,34 +139,43 @@ class TripBuilderService
      * @param Position[] $positions
      */
     protected function closeTrip(Vehicle $vehicle, array $positions, Position $endCandidate): Trip
-    {
-        // Solo las posiciones hasta el candidato a fin cuentan como parte del viaje
-        $tripPositions = collect($positions)->filter(
-            fn (Position $p) => $p->device_time->lte($endCandidate->device_time)
-        )->values();
+{
+    $tripPositions = collect($positions)->filter(
+        fn (Position $p) => $p->device_time->lte($endCandidate->device_time)
+    )->values();
 
-        $first = $tripPositions->first();
-        $last = $tripPositions->last();
+    $first = $tripPositions->first();
+    $last = $tripPositions->last();
 
-        $distanceKm = $this->calculateDistanceKm($tripPositions);
-        [$stopsCount, $stoppedSeconds] = $this->calculateStops($tripPositions);
+    // Idempotencia: si ya existe un trip para este vehículo con el mismo inicio,
+    // no lo volvemos a crear (puede pasar si trips:build corre sobre un rango
+    // que se traslapa con uno ya procesado).
+    $existing = Trip::where('vehicle_id', $vehicle->id)
+        ->where('started_at', $first->device_time)
+        ->first();
 
-        return Trip::create([
-            'vehicle_id' => $vehicle->id,
-            'origin_zone_id' => null,
-            'destination_zone_id' => null,
-            'started_at' => $first->device_time,
-            'ended_at' => $last->device_time,
-            'duration_seconds' => abs($last->device_time->diffInSeconds($first->device_time)),
-            'distance_km' => $distanceKm,
-            'average_speed' => $tripPositions->avg('speed'),
-            'max_speed' => $tripPositions->max('speed'),
-            'stops_count' => $stopsCount,
-            'stopped_seconds' => $stoppedSeconds,
-            'data_source' => 'real',
-        ]);
+    if ($existing) {
+        return $existing;
     }
 
+    $distanceKm = $this->calculateDistanceKm($tripPositions);
+    [$stopsCount, $stoppedSeconds] = $this->calculateStops($tripPositions);
+
+    return Trip::create([
+        'vehicle_id' => $vehicle->id,
+        'origin_zone_id' => null,
+        'destination_zone_id' => null,
+        'started_at' => $first->device_time,
+        'ended_at' => $last->device_time,
+        'duration_seconds' => abs($last->device_time->diffInSeconds($first->device_time)),
+        'distance_km' => $distanceKm,
+        'average_speed' => $tripPositions->avg('speed'),
+        'max_speed' => $tripPositions->max('speed'),
+        'stops_count' => $stopsCount,
+        'stopped_seconds' => $stoppedSeconds,
+        'data_source' => 'real',
+    ]);
+}
     /**
      * Distancia total sumando la distancia Haversine entre posiciones consecutivas.
      */
