@@ -19,8 +19,8 @@ class TripResource extends JsonResource
             'max_speed' => $this->max_speed,
             'stops_count' => $this->stops_count,
             'stopped_seconds' => $this->stopped_seconds,
-            'origin_zone_id' => $this->origin_zone_id,
-            'destination_zone_id' => $this->destination_zone_id,
+            'origin_zone' => $this->originZone?->name,
+            'destination_zone' => $this->destinationZone?->name,
             'data_source' => $this->data_source,
         ];
     }

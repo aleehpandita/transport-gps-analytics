@@ -30,4 +30,13 @@ class Trip extends Model
     {
         return $this->belongsTo(Vehicle::class);
     }
+    public function originZone(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Zone::class, 'origin_zone_id');
+    }
+
+    public function destinationZone(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Zone::class, 'destination_zone_id');
+    }
 }

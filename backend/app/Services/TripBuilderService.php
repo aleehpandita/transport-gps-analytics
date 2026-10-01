@@ -20,11 +20,16 @@ class TripBuilderService
      * una parada de >1.5h sí lo es. Punto de partida conservador: 15 minutos.
      */
     protected int $endConfirmationMinutes;
+    protected ZoneMatchingService $zoneMatcher;
 
-    public function __construct(int $startConfirmationSeconds = 30, int $endConfirmationMinutes = 15)
-    {
+    public function __construct(
+        int $startConfirmationSeconds = 30,
+        int $endConfirmationMinutes = 15,
+        ?ZoneMatchingService $zoneMatcher = null
+    ) {
         $this->startConfirmationSeconds = $startConfirmationSeconds;
         $this->endConfirmationMinutes = $endConfirmationMinutes;
+        $this->zoneMatcher = $zoneMatcher ?? new ZoneMatchingService();
     }
 
     /**
@@ -161,10 +166,13 @@ class TripBuilderService
     $distanceKm = $this->calculateDistanceKm($tripPositions);
     [$stopsCount, $stoppedSeconds] = $this->calculateStops($tripPositions);
 
+    $originZone = $this->zoneMatcher->resolve($first->latitude, $first->longitude);
+    $destinationZone = $this->zoneMatcher->resolve($last->latitude, $last->longitude);
+
     return Trip::create([
         'vehicle_id' => $vehicle->id,
-        'origin_zone_id' => null,
-        'destination_zone_id' => null,
+        'origin_zone_id' => $originZone?->id,
+        'destination_zone_id' => $destinationZone?->id,
         'started_at' => $first->device_time,
         'ended_at' => $last->device_time,
         'duration_seconds' => abs($last->device_time->diffInSeconds($first->device_time)),
