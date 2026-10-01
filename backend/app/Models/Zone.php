@@ -25,4 +25,8 @@ class Zone extends Model
         'reference_hotels',
         'notes',
     ];
+        protected $casts = [
+        'geometry' => 'array',
+        'reference_hotels' => 'array',
+    ];
 }

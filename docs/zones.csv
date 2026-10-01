@@ -2,7 +2,7 @@ id,name,time_from_airport_raw,time_from_airport_minutes,is_airport,requires_ferr
 1,Akumal,"1 hour and 30 minutes",90,false,false,true,Cancun-Riviera Maya,20.429090,-87.297629,,Point
 2,Boca Paila,"2 hours and 10 minutes",130,false,false,true,Cancun-Riviera Maya,20.128112,-87.464964,,Point
 3,Calica,"1 hour and 25 minutes",85,false,false,true,Cancun-Riviera Maya,,,,
-4,Cancun,"40 minutes",40,true,false,true,Cancun-Riviera Maya,21.042210,-86.874403,8,DestinationArea
+4,Cancun,"40 minutes",40,true,false,true,Cancun-Riviera Maya,21.162088,-86.821580,15,DestinationArea
 5,Chetumal,"5 hours and 30 minutes",330,false,false,true,Cancun-Riviera Maya,18.500129,-88.301905,15,DestinationArea
 6,Chichen Itza,"2 hours and 30 minutes",150,false,false,true,Cancun-Riviera Maya,20.684476,-88.567117,15,DestinationArea
 7,Chiquila,"2 hours",120,false,false,true,Cancun-Riviera Maya,21.426230,-87.341234,15,DestinationArea
@@ -16,7 +16,7 @@ id,name,time_from_airport_raw,time_from_airport_minutes,is_airport,requires_ferr
 15,Playa Mujeres,"1 hour",60,false,false,true,Cancun-Riviera Maya,21.230640,-86.803169,,Point
 16,Playacar,"1 hour and 10 minutes",70,false,false,true,Cancun-Riviera Maya,,,,
 17,Puerto Aventuras,"1 hour and 20 minutes",80,false,false,true,Cancun-Riviera Maya,20.507231,-87.214890,,Point
-18,Puerto Juarez,"45 minutes",45,false,false,true,Cancun-Riviera Maya,,,,
+18,Puerto Juarez,"45 minutes",45,false,false,true,Cancun-Riviera Maya,21.183925,-86.806610,2,Point
 19,Puerto Morelos,"about 25 minutes",25,false,false,true,Cancun-Riviera Maya,20.966522,-86.831626,,Point
 20,Tankah,"1 hour and 50 minutes",110,false,false,true,Cancun-Riviera Maya,20.235136,-87.460860,,Point
 21,Tulum,"1 hour and 45 minutes",105,false,false,true,Cancun-Riviera Maya,20.353623,-87.336600,,Point
