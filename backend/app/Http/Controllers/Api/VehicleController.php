@@ -12,12 +12,14 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class VehicleController extends Controller
 {
-   public function index(): AnonymousResourceCollection
+    public function index(): AnonymousResourceCollection
     {
+        [$startOfDay, $endOfDay] = $this->todayRangeInCancun();
+
         return VehicleResource::collection(
             Vehicle::where('active', true)
-                ->withSum(['trips as distance_today_km' => function ($query) {
-                    $query->whereDate('started_at', today())->where('data_source', 'real');
+                ->withSum(['trips as distance_today_km' => function ($query) use ($startOfDay, $endOfDay) {
+                    $query->whereBetween('started_at', [$startOfDay, $endOfDay])->where('data_source', 'real');
                 }], 'distance_km')
                 ->get()
         );
@@ -25,11 +27,21 @@ class VehicleController extends Controller
 
     public function show(Vehicle $vehicle): VehicleResource
     {
-        $vehicle->loadSum(['trips as distance_today_km' => function ($query) {
-            $query->whereDate('started_at', today())->where('data_source', 'real');
+        [$startOfDay, $endOfDay] = $this->todayRangeInCancun();
+
+        $vehicle->loadSum(['trips as distance_today_km' => function ($query) use ($startOfDay, $endOfDay) {
+            $query->whereBetween('started_at', [$startOfDay, $endOfDay])->where('data_source', 'real');
         }], 'distance_km');
 
         return new VehicleResource($vehicle);
+    }
+
+    protected function todayRangeInCancun(): array
+    {
+        return [
+            now('America/Cancun')->startOfDay()->utc(),
+            now('America/Cancun')->endOfDay()->utc(),
+        ];
     }
 
     public function latestPosition(Vehicle $vehicle): PositionResource|\Illuminate\Http\JsonResponse
