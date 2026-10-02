@@ -12,13 +12,23 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class VehicleController extends Controller
 {
-    public function index(): AnonymousResourceCollection
+   public function index(): AnonymousResourceCollection
     {
-        return VehicleResource::collection(Vehicle::where('active', true)->get());
+        return VehicleResource::collection(
+            Vehicle::where('active', true)
+                ->withSum(['trips as distance_today_km' => function ($query) {
+                    $query->whereDate('started_at', today())->where('data_source', 'real');
+                }], 'distance_km')
+                ->get()
+        );
     }
 
     public function show(Vehicle $vehicle): VehicleResource
     {
+        $vehicle->loadSum(['trips as distance_today_km' => function ($query) {
+            $query->whereDate('started_at', today())->where('data_source', 'real');
+        }], 'distance_km');
+
         return new VehicleResource($vehicle);
     }
 
