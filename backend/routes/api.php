@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\Api\VehicleController;
 use App\Http\Controllers\Api\ZoneController;
-
+use App\Http\Controllers\Api\ScheduledServiceController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('vehicles')->group(function () {
@@ -14,3 +14,8 @@ Route::prefix('vehicles')->group(function () {
 });
 
 Route::get('/zones', [ZoneController::class, 'index']);
+
+Route::prefix('scheduled-services')->group(function () {
+    Route::get('/', [ScheduledServiceController::class, 'index']);
+    Route::post('/', [ScheduledServiceController::class, 'store']);
+});
