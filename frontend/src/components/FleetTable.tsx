@@ -1,5 +1,5 @@
 import type { Vehicle } from '../types/api'
-import { formatKm, formatSpeed, formatTime } from '../lib/format'
+import { formatKm, formatLastSeen, formatSpeed } from '../lib/format'
 import { STATUS_DOT, STATUS_LABEL, STATUS_ORDER, vehicleStatus } from '../lib/vehicleStatus'
 
 interface FleetTableProps {
@@ -50,8 +50,8 @@ export function FleetTable({ vehicles, loading }: FleetTableProps) {
                 {v.latest_position ? formatSpeed(v.latest_position.speed) : '—'}
               </td>
               <td className="px-5 py-3 text-right tabular-nums">{formatKm(v.distance_today_km ?? 0)}</td>
-              <td className="px-5 py-3 text-right font-mono text-xs text-ink-muted">
-                {v.latest_position ? formatTime(v.latest_position.device_time) : '—'}
+              <td className="px-5 py-3 text-right font-mono text-xs whitespace-nowrap text-ink-muted">
+                {v.latest_position ? formatLastSeen(v.latest_position.device_time) : '—'}
               </td>
             </tr>
           ))}
