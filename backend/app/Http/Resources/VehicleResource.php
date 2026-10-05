@@ -17,6 +17,10 @@ class VehicleResource extends JsonResource
             'model' => $this->model,
             'active' => $this->active,
             'distance_today_km' => round($this->distance_today_km ?? 0, 2),
+            'latest_position' => $this->whenLoaded(
+                'latestPosition',
+                fn () => $this->latestPosition ? new PositionResource($this->latestPosition) : null,
+            ),
         ];
     }
 }

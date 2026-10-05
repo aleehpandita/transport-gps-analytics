@@ -3,10 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Vehicle extends Model
 {
-    //
     protected $fillable = [
         'name',
         'plate',
@@ -16,11 +17,26 @@ class Vehicle extends Model
         'model',
         'active',
     ];
-    public function positions(): \Illuminate\Database\Eloquent\Relations\HasMany
+
+    protected $casts = [
+        'active' => 'boolean',
+    ];
+
+    public function positions(): HasMany
     {
         return $this->hasMany(Position::class);
     }
-    public function trips(): \Illuminate\Database\Eloquent\Relations\HasMany
+
+    /**
+     * Última posición conocida del vehículo, según la hora del dispositivo.
+     * Se resuelve con una sola subconsulta aunque se cargue para toda la flota.
+     */
+    public function latestPosition(): HasOne
+    {
+        return $this->hasOne(Position::class)->latestOfMany('device_time');
+    }
+
+    public function trips(): HasMany
     {
         return $this->hasMany(Trip::class);
     }

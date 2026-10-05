@@ -7,6 +7,7 @@ use App\Http\Resources\PositionResource;
 use App\Http\Resources\TripResource;
 use App\Http\Resources\VehicleResource;
 use App\Models\Vehicle;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -18,6 +19,7 @@ class VehicleController extends Controller
 
         return VehicleResource::collection(
             Vehicle::where('active', true)
+                ->with('latestPosition')
                 ->withSum(['trips as distance_today_km' => function ($query) use ($startOfDay, $endOfDay) {
                     $query->whereBetween('started_at', [$startOfDay, $endOfDay])->where('data_source', 'real');
                 }], 'distance_km')
@@ -29,6 +31,7 @@ class VehicleController extends Controller
     {
         [$startOfDay, $endOfDay] = $this->todayRangeInCancun();
 
+        $vehicle->load('latestPosition');
         $vehicle->loadSum(['trips as distance_today_km' => function ($query) use ($startOfDay, $endOfDay) {
             $query->whereBetween('started_at', [$startOfDay, $endOfDay])->where('data_source', 'real');
         }], 'distance_km');
@@ -44,9 +47,9 @@ class VehicleController extends Controller
         ];
     }
 
-    public function latestPosition(Vehicle $vehicle): PositionResource|\Illuminate\Http\JsonResponse
+    public function latestPosition(Vehicle $vehicle): PositionResource|JsonResponse
     {
-        $position = $vehicle->positions()->orderByDesc('device_time')->first();
+        $position = $vehicle->latestPosition;
 
         if (!$position) {
             return response()->json(['message' => 'Sin posiciones registradas para este vehículo.'], 404);
