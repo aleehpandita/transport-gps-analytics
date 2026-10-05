@@ -47,3 +47,8 @@ ml/models/*.h5
 .DS_Store
 Thumbs.db
 *.log
+
+
+# Datos mínimos para reproducir el Avance 1 (excepciones, deben ir al final)
+!data/synthetic/synthetic_trips.csv.gz
+!data/raw/trips_real_export.csv
