@@ -1,1 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 @import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Base oscura inspirada en CABSI: fondo casi negro, superficies navy, acento índigo */
+  --color-base: #07080c;
+  --color-surface: #0e1424;
+  --color-surface-raised: #141c33;
+  --color-line: #1f2a47;
+  --color-ink: #e4e8f2;
+  --color-ink-muted: #8792ad;
+  --color-accent: #7c6cf2;
+
+  /* Estados operativos */
+  --color-ok: #3fb68b;
+  --color-risk: #e3a946;
+  --color-late: #e5566b;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-base text-ink font-sans antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
