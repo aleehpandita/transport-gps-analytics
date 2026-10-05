@@ -9,10 +9,10 @@ export function vehicleStatus(vehicle: Vehicle, now: Date = new Date()): Vehicle
   const p = vehicle.latest_position
   if (!p) return 'unknown'
 
-  const ageMinutes = Math.abs(now.getTime() - new Date(p.fix_time).getTime()) / 60_000
+  const ageMinutes = Math.abs(now.getTime() - new Date(p.device_time).getTime()) / 60_000
   if (ageMinutes > STALE_MINUTES) return 'stale'
   if (p.ignition === false) return 'off'
-  if (p.speed_kmh > 0) return 'moving'
+  if (p.speed > 0) return 'moving'
   // Motor encendido y velocidad 0: parada intermedia o esperando cliente
   return 'idling'
 }

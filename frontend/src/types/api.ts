@@ -1,12 +1,17 @@
 // Tipos de la API de Laravel, alineados con la respuesta real de cada Resource.
 
-// Pendiente de confirmar con GET /api/vehicles/{id}/latest-position
+// PositionResource (también se usa en GET /api/vehicles/{id}/latest-position)
 export interface LatestPosition {
+  id: number
   latitude: number
   longitude: number
-  speed_kmh: number
+  speed: number // km/h: traccar:sync-positions ya convierte desde nudos
+  course: number
   ignition: boolean | null
-  fix_time: string // ISO 8601 en UTC
+  motion: boolean | null
+  valid: boolean
+  device_time: string // ISO 8601 en UTC
+  data_source: string // 'real' o 'synthetic'
 }
 
 // VehicleResource
@@ -18,7 +23,7 @@ export interface Vehicle {
   model: string | null
   active: boolean
   distance_today_km: number
-  latest_position?: LatestPosition | null // todavía no viene en /api/vehicles
+  latest_position: LatestPosition | null
 }
 
 // ScheduledServiceResource: vehicle y destination_zone llegan como nombres, no como objetos
