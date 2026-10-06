@@ -10,7 +10,7 @@ Medido con las posiciones reales de la unidad piloto (25 al 29 de septiembre de 
 
 1. **En movimiento, el FMC920 genera una posición cada 6 segundos** en promedio. Es mucho más denso de lo que necesita el modelo de ETA.
 2. **El 13 % de las posiciones están duplicadas** por reenvíos del dispositivo. Traccar las guarda con IDs distintos.
-3. **Mientras la unidad se mueve, las posiciones no llegan a Traccar.** Se entregan en bloque horas después (hasta 8 h), con señal celular máxima. Con la configuración actual el seguimiento en tiempo real no es viable.
+3. **Mientras la unidad se mueve, las posiciones no llegan a Traccar.** Se entregan en bloque horas después (hasta 8 h), con señal celular máxima. La captura de tráfico muestra la causa: el dispositivo nunca recibe la respuesta de aceptación del servidor y por eso no envía posiciones (sección 4.8). Con la configuración actual el seguimiento en tiempo real no es viable.
 4. **Una parada de menos de una hora con el motor apagado no deja ningún registro.**
 
 Estos puntos deben resolverse antes de configurar los dispositivos de la flota.
@@ -225,8 +225,71 @@ END {
 }' /opt/traccar/logs/tracker-server.log.20260925 /opt/traccar/logs/tracker-server.log.20260926 | sort
 ```
 
-- [ ] Analizar la captura de tráfico del puerto 5027 (`tcpdump` en el servidor, iniciada el 5 de octubre, archivo `~/trayecto.pcap`) junto con el recorrido del 6 de octubre.
 
+
+### 4.8 Captura de tráfico: el dispositivo no recibe la respuesta del servidor
+
+Se grabó el tráfico del puerto 5027 en el servidor con `tcpdump`, del 5 de octubre en la noche al 6 de octubre, con dos recorridos ese día.
+
+Recorridos del 6 de octubre (horas aproximadas):
+
+| Evento | Cancún | UTC |
+|---|---|---|
+| Salida de casa | 09:54 | 14:54 |
+| Llegada a Costco | 10:10 | 15:10 |
+| Parada breve | 10:55 | 15:55 |
+| Llegada a casa | 11:10 | 16:10 |
+| Segunda salida | 13:00 | 18:00 |
+| Regreso | ~14:00 | ~19:00 |
+
+Resultado en el log de Traccar: las primeras posiciones del recorrido llegaron (14:00 UTC, 5 posiciones); de 15:00 a 19:00 UTC, unas 35 conexiones por hora sin ninguna posición; a las 20:00 UTC empezó la entrega en bloque. El problema se reprodujo.
+
+Resumen por conexión de la captura:
+
+| Conexión (UTC) | Bytes del FMC920 | Bytes del servidor | Resultado |
+|---|---|---|---|
+| 14:54:27 | 502 | 17 | Normal: identificación y posiciones |
+| 14:56:08 en adelante | 17 (solo IMEI) | 9 | Falla, todas iguales |
+
+Una conexión fallida, paquete por paquete:
+
+14:56:08.87 FMC920 → servidor SYN inicio de conexión
+14:56:08.93 FMC920 → servidor ack 1 la conexión se abre
+14:56:09.04 FMC920 → servidor 17 bytes (IMEI)
+14:56:09.04 servidor → FMC920 1 byte (01) aceptación
+14:56:09.31 servidor → FMC920 1 byte (01) reenvío
+14:56:09.85 servidor → FMC920 1 byte (01) reenvío
+14:56:10.94 servidor → FMC920 1 byte (01) reenvío
+14:56:13.11 servidor → FMC920 1 byte (01) reenvío
+14:56:17.72 servidor → FMC920 1 byte (01) reenvío
+14:56:26.42 servidor → FMC920 1 byte (01) reenvío
+14:56:39.08 FMC920 → servidor FIN, ack 1 cierra sin haber recibido el 01
+
+
+Hallazgos:
+
+- El protocolo Teltonika exige que el servidor responda `01` al IMEI antes de que el dispositivo envíe posiciones. **Traccar responde el `01`, pero el FMC920 nunca lo recibe**: todos sus mensajes confirman `ack 1` (nada recibido del servidor), incluso al cerrar.
+- El servidor reenvía el `01` con espera creciente, como corresponde en TCP. El FMC920 espera 30 segundos, cierra y reintenta en una conexión nueva, que falla igual.
+- **El saludo TCP sí llega** al dispositivo (la conexión se abre), pero **ningún mensaje del servidor con datos**, aunque sea de 1 byte.
+- En sentido contrario, el IMEI del dispositivo llega siempre.
+
+**Conclusión:** el problema está en el camino de bajada, del servidor hacia el FMC920. No es Traccar, ni el servidor, ni el tamaño de los paquetes; esto descarta la hipótesis de 4.7. Las causas posibles son la red de Telcel (equipos intermedios entre Internet y el dispositivo) o el módem del FMC920 en cómo mantiene la conexión de datos en movimiento.
+
+**Plan de verificación, sin desmontar la unidad piloto:**
+
+1. Instalar el primer dispositivo nuevo con SIM de Teltonika (multicarrier) en una unidad real de Feraltar y compararlo con la Tiguan (SIM Telcel) contra el mismo servidor, con las mismas consultas y una captura de tráfico.
+   - Si la unidad nueva entrega en tiempo real y la Tiguan no, el problema es de Telcel.
+   - Si ambas fallan, el problema es del FMC920 o de su configuración.
+2. Los cambios de configuración en la Tiguan se harán a distancia (SMS o comandos desde Traccar con la unidad estacionada, cuando la bajada funciona), verificando antes la sintaxis en la documentación oficial de Teltonika para el FMC920.
+3. Con la captura como evidencia, consultar al soporte de Teltonika si el problema persiste.
+
+Análisis de la captura (en el servidor):
+
+```bash
+sudo tcpdump -r ~/trayecto.pcap -nn -tttt 2>/dev/null | awk -f ~/conexiones.awk | awk '$1 >= "14:50" && $1 < "15:40"'
+```
+
+El script `~/conexiones.awk` resume cada conexión: bytes enviados por cada lado, segmento más grande, quién cierra y si hubo reset.
 
 ## 5. Implicaciones para el sistema
 
@@ -283,15 +346,27 @@ Los nombres exactos de los parámetros deben confirmarse en el Configurator para
 
 ## 7. Pendientes
 
-- [ ] Capturar el log de Traccar durante un recorrido para encontrar la causa del retraso de 4.3:
-  `sudo tail -f /opt/traccar/logs/tracker-server.log | tee ~/log-trayecto.txt`
-- [ ] Explicar la diferencia entre `odometer` y `totalDistance`.
-- [ ] Medir los bytes reales por registro y el consumo diario de datos.
+### Se pueden hacer ya
+
 - [ ] Deduplicar posiciones en el sync y limpiar los 318 duplicados existentes.
 - [ ] Cambiar el sync para consultar por hora de llegada al servidor.
 - [ ] Ajustar los umbrales de "Sin señal reciente" en el dashboard.
+- [ ] Explicar la diferencia entre `odometer` y `totalDistance`.
+
+### Esperan a los dispositivos nuevos
+
+- [ ] Comparar la unidad piloto (SIM Telcel) contra el primer dispositivo nuevo con SIM de Teltonika.
 - [ ] Validar la propuesta de configuración (sección 6).
+- [ ] Medir los bytes reales por registro y el consumo diario de datos.
+
+### Antes de producción
+
 - [ ] Hardening del servidor (sección 2).
+
+### Hechos
+
+- [x] Capturar el log de Traccar durante un recorrido (secciones 4.7 y 4.8).
+- [x] Analizar la captura de tráfico del puerto 5027 (6 de octubre). Resultado en la sección 4.8.
 
 ## 8. SIM para la flota (Teltonika / 1GLOBAL)
 
