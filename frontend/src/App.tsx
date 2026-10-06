@@ -1,7 +1,7 @@
 import { ArrivalsPanel } from './components/ArrivalsPanel'
+import { FleetMap } from './components/FleetMap'
 import { FleetTable } from './components/FleetTable'
 import { Header } from './components/Header'
-import { MapPlaceholder } from './components/MapPlaceholder'
 import { Panel } from './components/Panel'
 import { usePolling } from './hooks/usePolling'
 import { fetchScheduledServices, fetchVehicles } from './lib/apiClient'
@@ -28,7 +28,7 @@ export default function App() {
       <main className="grid flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:p-6">
         <div className="flex min-w-0 flex-col gap-4">
           <Panel index={1} title="Mapa de flota" className="min-h-[360px] flex-1">
-            <MapPlaceholder />
+            <FleetMap vehicles={fleet} />
           </Panel>
 
           <Panel index={2} title="Unidades" aside={`${fleet.length} en total`}>

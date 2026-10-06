@@ -34,3 +34,14 @@ body {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
+
+/* Mapa: fondo oscuro mientras cargan las imágenes (Leaflet usa gris claro por defecto) */
+.leaflet-container {
+  background: var(--color-base);
+}
+
+/* Mapa oscuro a partir de los tiles claros de OpenStreetMap.
+   Solo afecta la capa de imágenes; los marcadores conservan su color. */
+.map-tiles-dark {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.5);
+}
