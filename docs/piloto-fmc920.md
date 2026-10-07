@@ -348,8 +348,8 @@ Los nombres exactos de los parámetros deben confirmarse en el Configurator para
 
 ### Se pueden hacer ya
 
-- [ ] Deduplicar posiciones en el sync y limpiar los 318 duplicados existentes.
-- [ ] Cambiar el sync para consultar por hora de llegada al servidor.
+- [x] Deduplicar posiciones en el sync y limpiar los 318 duplicados existentes.
+- [x] Revisar que el sync no pierda posiciones que llegan tarde: la API de Traccar filtra por hora del GPS, no por hora de llegada; la ventana de 24 h cubre el retraso máximo medido (8.4 h).
 - [ ] Ajustar los umbrales de "Sin señal reciente" en el dashboard.
 - [ ] Explicar la diferencia entre `odometer` y `totalDistance`.
 
