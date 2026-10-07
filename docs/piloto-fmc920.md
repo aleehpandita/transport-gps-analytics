@@ -366,7 +366,7 @@ Los nombres exactos de los parámetros deben confirmarse en el Configurator para
 ### Hechos
 
 - [x] Capturar el log de Traccar durante un recorrido (secciones 4.7 y 4.8).
-- [x] Analizar la captura de tráfico del puerto 5027 (6 de octubre). Resultado en la sección 4.8.
+- [x] Analizar la captura de tráfico del puerto 5027 (6 de octubre). Resultado en la sección 4.8.1§
 
 ## 8. SIM para la flota (Teltonika / 1GLOBAL)
 
