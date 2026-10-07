@@ -158,7 +158,7 @@ class TripBuilderService
         $first = $tripPositions->first();
         $last = $tripPositions->last();
 
-        $distanceKm = $this->calculateDistanceKm($tripPositions);
+        $distanceKm = $this->calculateTripDistanceKm($tripPositions);
         [$stopsCount, $stoppedSeconds] = $this->calculateStops($tripPositions);
 
         $originZone = $this->zoneMatcher->resolve($first->latitude, $first->longitude);
@@ -185,7 +185,35 @@ class TripBuilderService
     }
 
     /**
+     * Distancia del viaje en km.
+     *
+     * Prioridad: odómetro del FMC920 (diferencia entre la última y la primera posición).
+     * El dispositivo lo calcula internamente, así que no depende de cada cuánto se guardan
+     * posiciones: sigue siendo exacto si la configuración espacia los registros.
+     * Si falta o es inconsistente (negativo, por ejemplo por un reinicio del contador),
+     * se usa la suma Haversine entre posiciones.
+     *
+     * Validado el 6 de octubre de 2026: en 4 viajes reales, odómetro, Haversine y
+     * totalDistance de Traccar coincidieron con diferencias de 10 m o menos
+     * (docs/piloto-fmc920.md, sección 4.6).
+     */
+    protected function calculateTripDistanceKm(Collection $positions): float
+    {
+        // getAttribute() explícito: la columna se llama "attributes", igual que la
+        // propiedad interna de Eloquent, y así no hay ambigüedad.
+        $startOdometer = $positions->first()->getAttribute('attributes')['odometer'] ?? null;
+        $endOdometer = $positions->last()->getAttribute('attributes')['odometer'] ?? null;
+
+        if (is_numeric($startOdometer) && is_numeric($endOdometer) && $endOdometer >= $startOdometer) {
+            return round(($endOdometer - $startOdometer) / 1000, 3);
+        }
+
+        return $this->calculateDistanceKm($positions);
+    }
+
+    /**
      * Distancia total sumando la distancia Haversine entre posiciones consecutivas.
+     * Respaldo de calculateTripDistanceKm() cuando no hay odómetro confiable.
      */
     protected function calculateDistanceKm(Collection $positions): float
     {

@@ -171,7 +171,16 @@ Del payload real que entrega Traccar en `attributes`:
 | `hdop` | 0.7 | Precisión horizontal (menor es mejor). |
 | `rssi` | 5 | Señal celular, escala 0 a 5. |
 
-**Pendiente:** `odometer` indica unos 264 km y `totalDistance` unos 9,960 km. No cuadran. Antes de usar cualquiera para `distance_km` hay que entender qué mide cada uno.
+**Resuelto (6 de octubre de 2026):** la diferencia entre `odometer` (264 km) y `totalDistance` (9,960 km) es solo el punto de partida de cada contador. Dentro de un viaje, las tres medidas coinciden:
+
+| Viaje (Cancún) | Haversine | `odometer` | `totalDistance` |
+|---|---|---|---|
+| 09:54 a 10:09 | 3.98 km | 3.97 km | 3.98 km |
+| 10:39 a 11:07 | 4.67 km | 4.66 km | 4.68 km |
+| 12:47 a 12:56 | 2.06 km | 2.07 km | 2.06 km |
+| 13:25 a 13:37 | 2.30 km | 2.29 km | 2.30 km |
+
+`trips.distance_km` usa la diferencia de `odometer` entre la primera y la última posición del viaje, con Haversine como respaldo. El odómetro lo calcula el dispositivo internamente, así que no depende de la densidad de posiciones y seguirá siendo exacto con la configuración propuesta en la sección 6, que espacia los registros.
 
 
 ### 4.7 Análisis del log de Traccar (24 al 26 de septiembre)
@@ -351,7 +360,7 @@ Los nombres exactos de los parámetros deben confirmarse en el Configurator para
 - [x] Deduplicar posiciones en el sync y limpiar los 318 duplicados existentes.
 - [x] Revisar que el sync no pierda posiciones que llegan tarde: la API de Traccar filtra por hora del GPS, no por hora de llegada; la ventana de 24 h cubre el retraso máximo medido (8.4 h).
 - [ ] Ajustar los umbrales de "Sin señal reciente" en el dashboard.
-- [ ] Explicar la diferencia entre `odometer` y `totalDistance`.
+- [x] Explicar la diferencia entre `odometer` y `totalDistance`.
 
 ### Esperan a los dispositivos nuevos
 

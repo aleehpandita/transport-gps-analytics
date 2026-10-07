@@ -102,12 +102,15 @@ Datos operativos observados — hechos, no derivaciones.
 | `started_at` | datetime | |
 | `ended_at` | datetime | |
 | `duration_seconds` | int | Target real, conocido solo al terminar el viaje |
-| `distance_km` | float | |
+| `distance_km` | float | Diferencia de `attributes.odometer` (metros, calculado por el FMC920) entre la primera y la última posición del viaje. Si falta o es negativa, se usa la suma Haversine entre posiciones consecutivas. Conocida al terminar el viaje; ver nota abajo. |
 | `average_speed` | float | **Descriptivo — no usar como input del modelo baseline** |
 | `max_speed` | float | **Descriptivo — no usar como input del modelo baseline** |
 | `stops_count` | int | **Descriptivo — no usar como input del modelo baseline** |
 | `stopped_seconds` | int | **Descriptivo — no usar como input del modelo baseline** |
 | `data_source` | enum('real','synthetic') | Obligatorio, siempre explícito |
+
+
+> **`distance_km` como input del modelo:** la distancia de un viaje ya terminado no existe al momento de predecir. Para el baseline, la distancia debe venir de algo conocido antes de salir: la distancia esperada entre la zona de origen y la de destino (por ejemplo, la matriz de `docs/zone_baseline_matrix.csv`), no `distance_km` del propio viaje.
 
 ## `trip_features` (capa derivada, recalculable)
 
