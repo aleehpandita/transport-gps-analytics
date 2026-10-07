@@ -2,19 +2,26 @@ import type { Vehicle } from '../types/api'
 
 export type VehicleStatus = 'moving' | 'idling' | 'off' | 'stale' | 'unknown'
 
-// Si la última posición tiene más de esto, la unidad se considera sin señal
-const STALE_MINUTES = 10
+// Umbrales medidos en el piloto (docs/piloto-fmc920.md, sección 4.1).
+// En movimiento, el hueco máximo entre posiciones fue de 318 s; se suma margen
+// por el Send Period de 120 s y por el intervalo del sync.
+const STALE_MOVING_MINUTES = 8
+// Detenida o apagada, el FMC920 reporta una vez por hora (On Stop, Min Period 3600 s).
+const STALE_STOPPED_MINUTES = 65
 
 export function vehicleStatus(vehicle: Vehicle, now: Date = new Date()): VehicleStatus {
   const p = vehicle.latest_position
   if (!p) return 'unknown'
 
+  // Estado según la última posición, antes de considerar su antigüedad
+  const lastKnown: VehicleStatus =
+    p.ignition === false ? 'off' : p.speed > 0 ? 'moving' : 'idling'
+
+  // El tiempo aceptable sin reportar depende de lo que estaba haciendo la unidad
+  const limitMinutes = lastKnown === 'moving' ? STALE_MOVING_MINUTES : STALE_STOPPED_MINUTES
   const ageMinutes = Math.abs(now.getTime() - new Date(p.device_time).getTime()) / 60_000
-  if (ageMinutes > STALE_MINUTES) return 'stale'
-  if (p.ignition === false) return 'off'
-  if (p.speed > 0) return 'moving'
-  // Motor encendido y velocidad 0: parada intermedia o esperando cliente
-  return 'idling'
+
+  return ageMinutes > limitMinutes ? 'stale' : lastKnown
 }
 
 export const STATUS_LABEL: Record<VehicleStatus, string> = {
