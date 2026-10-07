@@ -3,17 +3,25 @@ import { FleetMap } from './components/FleetMap'
 import { FleetTable } from './components/FleetTable'
 import { Header } from './components/Header'
 import { Panel } from './components/Panel'
+import { TripsPanel } from './components/TripsPanel'
 import { usePolling } from './hooks/usePolling'
-import { fetchScheduledServices, fetchVehicles } from './lib/apiClient'
+import { fetchScheduledServices, fetchTodayTrips, fetchVehicles } from './lib/apiClient'
+import { formatKm } from './lib/format'
 
 const VEHICLES_INTERVAL_MS = 15_000
 const SERVICES_INTERVAL_MS = 60_000
+// El Trip Builder corre cada 10 minutos; pedir más seguido no trae viajes nuevos
+const TRIPS_INTERVAL_MS = 60_000
 
 export default function App() {
   const vehicles = usePolling(fetchVehicles, VEHICLES_INTERVAL_MS)
   const services = usePolling(fetchScheduledServices, SERVICES_INTERVAL_MS)
+  const trips = usePolling(fetchTodayTrips, TRIPS_INTERVAL_MS)
 
   const fleet = vehicles.data ?? []
+  const todayTrips = trips.data ?? []
+  const todayKm = todayTrips.reduce((sum, trip) => sum + trip.distance_km, 0)
+  const tripsSummary = `${todayTrips.length} ${todayTrips.length === 1 ? 'viaje' : 'viajes'}, ${formatKm(todayKm)}`
 
   return (
     <div className="flex min-h-full flex-col">
@@ -36,13 +44,19 @@ export default function App() {
           </Panel>
         </div>
 
-        <Panel index={3} title="Predicciones de llegada">
-          <ArrivalsPanel
-            services={services.data ?? []}
-            vehicles={fleet}
-            loading={services.loading}
-          />
-        </Panel>
+        <div className="flex min-w-0 flex-col gap-4">
+          <Panel index={3} title="Predicciones de llegada">
+            <ArrivalsPanel
+              services={services.data ?? []}
+              vehicles={fleet}
+              loading={services.loading}
+            />
+          </Panel>
+
+          <Panel index={4} title="Viajes de hoy" aside={tripsSummary}>
+            <TripsPanel trips={todayTrips} loading={trips.loading} />
+          </Panel>
+        </div>
       </main>
     </div>
   )

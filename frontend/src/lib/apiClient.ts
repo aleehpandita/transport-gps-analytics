@@ -1,4 +1,4 @@
-import type { Collection, Paginated, ScheduledService, Vehicle } from '../types/api'
+import type { Collection, Paginated, ScheduledService, Trip, Vehicle } from '../types/api'
 
 export class ApiError extends Error {
   readonly status: number
@@ -29,3 +29,7 @@ export const fetchVehicles = (signal: AbortSignal) =>
 // Solo lee la primera página (50 registros). Más adelante filtraremos en el backend.
 export const fetchScheduledServices = (signal: AbortSignal) =>
   getJson<Paginated<ScheduledService>>('/scheduled-services', signal).then((r) => r.data)
+
+// Viajes de hoy de toda la flota. El backend corta el día en hora Cancún.
+export const fetchTodayTrips = (signal: AbortSignal) =>
+  getJson<Collection<Trip>>('/trips', signal).then((r) => r.data)
