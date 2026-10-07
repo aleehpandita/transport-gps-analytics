@@ -5,44 +5,51 @@ namespace App\Console\Commands;
 use App\Models\Position;
 use App\Models\Vehicle;
 use App\Services\TraccarService;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
-
-
+use Illuminate\Support\Facades\DB;
 
 /**
- * Comando para sincronizar posiciones desde Traccar hacia la tabla positions.
- * 
- * Se ejecuta con:
- * php artisan traccar:sync-positions --hours=24
- * 
- * La opción --hours indica la ventana de tiempo hacia atrás a consultar en Traccar (por defecto 24 horas).
- */
-/** 
- * Puntos clave de este comando, conforme a las decisiones que ya tomamos:
- * 
- * Idempotencia real: antes de insertar, verifica si traccar_position_id ya existe — así puedes correr el comando cuantas veces quieras sin duplicar nada, tal como pedía el diseño original.
- * 
- *  Conversión de velocidad: aquí es donde se aplica la conversión de knots a km/h que detectamos ayer (* 1.852) — se hace una sola vez, al ingerir, nunca se guarda el valor crudo de Traccar. 
- * 
- * Extracción de ignition/motion: se toman de dentro de attributes, confirmando el hallazgo de ayer. 
- * 
- * --hours configurable: por default trae las últimas 24 horas, pero puedes ajustarlo (--hours=72 para probar con más rango).
- * 
- * Recorre todos los vehículos activos, no solo el Tiguan — ya queda listo para cuando agreguen más unidades a la flotilla.
+ * Sincroniza posiciones desde Traccar hacia la tabla positions.
  *
+ *   php artisan traccar:sync-positions             (últimas 24 horas)
+ *   php artisan traccar:sync-positions --hours=72
+ *
+ * Decisiones (detalle en docs/piloto-fmc920.md):
+ *
+ * - Ventana hacia atrás por hora del GPS. Traccar filtra from/to por fixTime, no por
+ *   la hora en que la posición llegó al servidor. Como las posiciones pueden llegar con
+ *   horas de retraso (hasta 8.4 h medido en el piloto), la ventana debe cubrir ese
+ *   retraso. 24 h por defecto.
+ *
+ * - Doble deduplicación:
+ *   1. Por traccar_position_id: la misma posición consultada en dos corridas.
+ *   2. Por vehículo, device_time y coordenadas: el FMC920 reenvía registros cuando no
+ *      recibe confirmación, y Traccar guarda cada reenvío con un id distinto
+ *      (13 % de duplicados en el piloto).
+ *
+ * - Velocidad: Traccar entrega nudos; se convierte a km/h una sola vez, al guardar.
+ * - ignition y motion vienen dentro de attributes, no en el primer nivel.
  */
 class SyncTraccarPositions extends Command
 {
     protected $signature = 'traccar:sync-positions {--hours=24 : Ventana de horas hacia atrás a consultar}';
-    protected $description = 'Sincroniza posiciones nuevas desde Traccar hacia la tabla positions, evitando duplicados';
+
+    protected $description = 'Sincroniza posiciones desde Traccar hacia la tabla positions, sin duplicados';
+
+    private const KNOTS_TO_KMH = 1.852;
 
     public function handle(TraccarService $traccar): int
     {
-        $hours = (int) $this->option('hours');
+        $hours = max(1, (int) $this->option('hours'));
+        $to = CarbonImmutable::now('UTC');
+        $from = $to->subHours($hours);
+
         $vehicles = Vehicle::where('active', true)->get();
 
         if ($vehicles->isEmpty()) {
             $this->warn('No hay vehículos activos registrados.');
+
             return self::SUCCESS;
         }
 
@@ -51,45 +58,100 @@ class SyncTraccarPositions extends Command
 
             $positions = $traccar->getPositions(
                 $vehicle->traccar_device_id,
-                now()->subHours($hours)->toIso8601String(),
-                now()->toIso8601String()
+                $from->toIso8601String(),
+                $to->toIso8601String()
             );
 
-            $created = 0;
-            $skipped = 0;
+            // Lo que ya existe para este vehículo en la ventana, en una sola consulta.
+            // Una hora de margen: Traccar filtra por fixTime y aquí se guarda deviceTime.
+            $existing = Position::where('vehicle_id', $vehicle->id)
+                ->where('data_source', 'real')
+                ->where('device_time', '>=', $from->subHour())
+                ->get(['traccar_position_id', 'device_time', 'latitude', 'longitude']);
 
-            foreach ($positions as $raw) {
-                $exists = Position::where('traccar_position_id', $raw['id'])->exists();
+            $knownIds = $existing->pluck('traccar_position_id')->flip()->all();
 
-                if ($exists) {
-                    $skipped++;
-                    continue;
-                }
+            $knownKeys = $existing
+                ->mapWithKeys(fn (Position $p) => [
+                    $this->dedupKey($p->device_time, $p->latitude, $p->longitude) => true,
+                ])
+                ->all();
 
-                Position::create([
-                    'vehicle_id' => $vehicle->id,
-                    'traccar_position_id' => $raw['id'],
-                    'latitude' => $raw['latitude'],
-                    'longitude' => $raw['longitude'],
-                    'altitude' => $raw['altitude'] ?? null,
-                    'speed' => ($raw['speed'] ?? 0) * 1.852, // knots -> km/h
-                    'course' => $raw['course'] ?? null,
-                    'accuracy' => $raw['accuracy'] ?? null,
-                    'ignition' => $raw['attributes']['ignition'] ?? null,
-                    'motion' => $raw['attributes']['motion'] ?? null,
-                    'valid' => $raw['valid'] ?? true,
-                    'device_time' => $raw['deviceTime'],
-                    'server_time' => $raw['serverTime'] ?? null,
-                    'attributes' => $raw['attributes'] ?? [],
-                    'data_source' => 'real',
-                ]);
+            [$created, $sameId, $resent] = DB::transaction(
+                fn () => $this->storePositions($vehicle, $positions, $knownIds, $knownKeys)
+            );
 
-                $created++;
-            }
-
-            $this->info("  → {$created} nuevas, {$skipped} ya existentes (omitidas).");
+            $this->info("  → {$created} nuevas, {$sameId} ya existentes, {$resent} reenvíos descartados.");
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Guarda las posiciones nuevas y regresa [creadas, ya existentes, reenvíos].
+     */
+    private function storePositions(Vehicle $vehicle, array $positions, array $knownIds, array $knownKeys): array
+    {
+        $created = 0;
+        $sameId = 0;
+        $resent = 0;
+
+        foreach ($positions as $raw) {
+            if (isset($knownIds[$raw['id']])) {
+                $sameId++;
+
+                continue;
+            }
+
+            $key = $this->dedupKey($raw['deviceTime'], $raw['latitude'], $raw['longitude']);
+
+            if (isset($knownKeys[$key])) {
+                $resent++;
+
+                continue;
+            }
+
+            Position::create([
+                'vehicle_id' => $vehicle->id,
+                'traccar_position_id' => $raw['id'],
+                'latitude' => $raw['latitude'],
+                'longitude' => $raw['longitude'],
+                'altitude' => $raw['altitude'] ?? null,
+                'speed' => ($raw['speed'] ?? 0) * self::KNOTS_TO_KMH,
+                'course' => $raw['course'] ?? null,
+                'accuracy' => $raw['accuracy'] ?? null,
+                'ignition' => $raw['attributes']['ignition'] ?? null,
+                'motion' => $raw['attributes']['motion'] ?? null,
+                'valid' => $raw['valid'] ?? true,
+                'device_time' => $raw['deviceTime'],
+                'server_time' => $raw['serverTime'] ?? null,
+                'attributes' => $raw['attributes'] ?? [],
+                'data_source' => 'real',
+            ]);
+
+            // Para detectar duplicados dentro de la misma respuesta de Traccar
+            $knownIds[$raw['id']] = true;
+            $knownKeys[$key] = true;
+            $created++;
+        }
+
+        return [$created, $sameId, $resent];
+    }
+
+    /**
+     * Identifica una posición física: misma hora del GPS (en UTC) y mismas coordenadas.
+     */
+    private function dedupKey(\DateTimeInterface|string $deviceTime, float|string $latitude, float|string $longitude): string
+    {
+        $time = $deviceTime instanceof \DateTimeInterface
+            ? CarbonImmutable::instance($deviceTime)
+            : CarbonImmutable::parse($deviceTime);
+
+        return sprintf(
+            '%s|%.7f|%.7f',
+            $time->utc()->format('Y-m-d H:i:s'),
+            (float) $latitude,
+            (float) $longitude
+        );
     }
 }
