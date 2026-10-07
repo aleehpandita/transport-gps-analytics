@@ -122,11 +122,12 @@ class TripBuilderService
             }
         }
 
-        // Si se acabaron las posiciones y todavía había un viaje abierto (nunca se confirmó
-        // el fin dentro de la ventana consultada), lo cerramos igual con la mejor información
-        // disponible: el candidato a fin si ya había uno detectado, o si no, la última
-        // posición conocida. Sin esto, un viaje que sigue "vivo" al final del rango de fechas
-        // se pierde en silencio y $trips regresa vacío aunque sí hubo movimiento real.
+        // Si se acabaron las posiciones y todavía había un viaje abierto, se guarda de forma
+        // provisional con la mejor información disponible: el candidato a fin si ya había uno,
+        // o si no, la última posición conocida. Puede ser un viaje en curso, o uno cuyas
+        // posiciones todavía no terminan de llegar (el FMC920 puede entregarlas con horas de
+        // retraso, ver docs/piloto-fmc920.md). No queda cortado: closeTrip() lo recalcula y
+        // lo actualiza en las siguientes corridas, cuando ya haya más posiciones.
         if ($tripStart !== null && !empty($tripPositions)) {
             $lastPosition = end($tripPositions);
             $closingPoint = $endCandidate ?? $lastPosition;
@@ -137,53 +138,52 @@ class TripBuilderService
     }
 
     /**
-     * Calcula las métricas del viaje y crea el registro en trips.
+     * Calcula las métricas del viaje y lo guarda en trips.
      * ended_at usa el momento del candidato a fin, no el momento de confirmación,
      * para no inflar la duración con el tiempo de espera de confirmación.
+     *
+     * Idempotente y autocorrectivo: la llave es vehículo + started_at. Si el viaje ya existe,
+     * se recalcula y se actualiza con las posiciones actuales, en lugar de dejarlo como estaba.
+     * Así, un viaje guardado de forma provisional (cortado porque faltaban posiciones) se
+     * completa cuando trips:build vuelve a correr sobre un rango que lo incluye.
      *
      * @param Position[] $positions
      */
     protected function closeTrip(Vehicle $vehicle, array $positions, Position $endCandidate): Trip
-{
-    $tripPositions = collect($positions)->filter(
-        fn (Position $p) => $p->device_time->lte($endCandidate->device_time)
-    )->values();
+    {
+        $tripPositions = collect($positions)->filter(
+            fn (Position $p) => $p->device_time->lte($endCandidate->device_time)
+        )->values();
 
-    $first = $tripPositions->first();
-    $last = $tripPositions->last();
+        $first = $tripPositions->first();
+        $last = $tripPositions->last();
 
-    // Idempotencia: si ya existe un trip para este vehículo con el mismo inicio,
-    // no lo volvemos a crear (puede pasar si trips:build corre sobre un rango
-    // que se traslapa con uno ya procesado).
-    $existing = Trip::where('vehicle_id', $vehicle->id)
-        ->where('started_at', $first->device_time)
-        ->first();
+        $distanceKm = $this->calculateDistanceKm($tripPositions);
+        [$stopsCount, $stoppedSeconds] = $this->calculateStops($tripPositions);
 
-    if ($existing) {
-        return $existing;
+        $originZone = $this->zoneMatcher->resolve($first->latitude, $first->longitude);
+        $destinationZone = $this->zoneMatcher->resolve($last->latitude, $last->longitude);
+
+        return Trip::updateOrCreate(
+            [
+                'vehicle_id' => $vehicle->id,
+                'started_at' => $first->device_time,
+            ],
+            [
+                'origin_zone_id' => $originZone?->id,
+                'destination_zone_id' => $destinationZone?->id,
+                'ended_at' => $last->device_time,
+                'duration_seconds' => abs($last->device_time->diffInSeconds($first->device_time)),
+                'distance_km' => $distanceKm,
+                'average_speed' => $tripPositions->avg('speed'),
+                'max_speed' => $tripPositions->max('speed'),
+                'stops_count' => $stopsCount,
+                'stopped_seconds' => $stoppedSeconds,
+                'data_source' => 'real',
+            ]
+        );
     }
 
-    $distanceKm = $this->calculateDistanceKm($tripPositions);
-    [$stopsCount, $stoppedSeconds] = $this->calculateStops($tripPositions);
-
-    $originZone = $this->zoneMatcher->resolve($first->latitude, $first->longitude);
-    $destinationZone = $this->zoneMatcher->resolve($last->latitude, $last->longitude);
-
-    return Trip::create([
-        'vehicle_id' => $vehicle->id,
-        'origin_zone_id' => $originZone?->id,
-        'destination_zone_id' => $destinationZone?->id,
-        'started_at' => $first->device_time,
-        'ended_at' => $last->device_time,
-        'duration_seconds' => abs($last->device_time->diffInSeconds($first->device_time)),
-        'distance_km' => $distanceKm,
-        'average_speed' => $tripPositions->avg('speed'),
-        'max_speed' => $tripPositions->max('speed'),
-        'stops_count' => $stopsCount,
-        'stopped_seconds' => $stoppedSeconds,
-        'data_source' => 'real',
-    ]);
-}
     /**
      * Distancia total sumando la distancia Haversine entre posiciones consecutivas.
      */
