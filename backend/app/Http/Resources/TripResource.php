@@ -11,6 +11,8 @@ class TripResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'vehicle_id' => $this->vehicle_id,
+            'vehicle' => $this->whenLoaded('vehicle', fn () => $this->vehicle->name),
             'started_at' => $this->started_at->toIso8601String(),
             'ended_at' => $this->ended_at->toIso8601String(),
             'duration_seconds' => $this->duration_seconds,
