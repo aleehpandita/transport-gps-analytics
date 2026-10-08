@@ -52,3 +52,6 @@ Thumbs.db
 # Datos mínimos para reproducir el Avance 1 (excepciones, deben ir al final)
 !data/synthetic/synthetic_trips.csv.gz
 !data/raw/trips_real_export.csv
+
+# Dataset limpio del Avance 1, comprimido para que el Avance 2 corra sin regenerarlo
+!data/processed/trips_clean.csv.gz
