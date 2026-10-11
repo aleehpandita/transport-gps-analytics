@@ -2,7 +2,7 @@
 
 Documento vivo del piloto de rastreo GPS en la unidad de prueba. Reúne la configuración del dispositivo, la infraestructura y los hallazgos medidos con datos reales.
 
-Última actualización: 5 de octubre de 2026.
+Última actualización: 11 de octubre de 2026.
 
 ## Resumen de hallazgos
 
@@ -147,7 +147,7 @@ Se revisó si el bloqueo dependía de que la unidad estuviera apagada. Actividad
 
 El envío se destrabó entre 19:00 y 21:00, **con la unidad apagada**, y durante las 6 horas encendida y en movimiento no llegó nada. El estado del motor no explica ni el bloqueo ni el desbloqueo. La entrega se recuperó sola, cerca de hora y media después del último recorrido.
 
-**Hipótesis vigente:** el fallo está en el intercambio entre el FMC920 y Traccar. El dispositivo intenta enviar el paquete más viejo de la cola, la entrega no se confirma, lo reintenta (de ahí los duplicados) y todo lo demás queda atorado detrás. Falta confirmarlo con el log de Traccar durante un recorrido (ver pendientes).
+**Hipótesis de ese momento** (superada por 4.7 y 4.8): el fallo está en el intercambio entre el FMC920 y Traccar. El dispositivo intenta enviar el paquete más viejo de la cola, la entrega no se confirma, lo reintenta (de ahí los duplicados) y todo lo demás queda atorado detrás.
 
 ### 4.5 Paradas cortas sin registro
 
@@ -182,7 +182,6 @@ Del payload real que entrega Traccar en `attributes`:
 
 `trips.distance_km` usa la diferencia de `odometer` entre la primera y la última posición del viaje, con Haversine como respaldo. El odómetro lo calcula el dispositivo internamente, así que no depende de la densidad de posiciones y seguirá siendo exacto con la configuración propuesta en la sección 6, que espacia los registros.
 
-
 ### 4.7 Análisis del log de Traccar (24 al 26 de septiembre)
 
 Traccar registra en `/opt/traccar/logs/tracker-server.log` cada paquete completo que recibe del dispositivo (`<`) y cada respuesta que le devuelve (`>`). Los registros están en UTC y se guardan por día.
@@ -197,14 +196,24 @@ Resumen por hora (UTC):
 
 Sesión típica durante el manejo:
 
-17:00:40 connected
-17:00:40 teltonika < (IMEI)
-17:00:40 teltonika > 01
-17:01:10 disconnected
-17:02:40 connected (90 s después, se repite igual)
+```
+17:00:40  connected
+17:00:40  teltonika < (IMEI)
+17:00:40  teltonika > 01
+17:01:10  disconnected
+17:02:40  connected            (90 s después, se repite igual)
+```
 
 Sesión exitosa, con la unidad estacionada:
 
+```
+00:56:01  connected
+00:56:02  teltonika < (IMEI)
+00:56:02  teltonika > 01
+00:56:02  teltonika < (paquete con 1 registro)
+00:56:02  teltonika > 00000001  (confirmación de 1 registro)
+01:01:02  disconnected         (5 min después)
+```
 
 Hallazgos:
 
@@ -214,7 +223,7 @@ Hallazgos:
 - El patrón se repite el 24, el 25 y el 26 de septiembre.
 - **Corrección:** la conexión de 30 segundos observada al configurar el piloto, que se tomó como comportamiento normal, es en realidad el patrón de falla.
 
-**Hipótesis vigente** (reemplaza la de 4.4): el FMC920 sí envía el paquete de datos, pero no llega completo a Traccar, que solo registra paquetes Teltonika completos. El dispositivo espera la confirmación 30 segundos (tiempo de espera de respuesta del servidor), cierra y reintenta, cada vez con una cola más grande. Estacionada, cada paquete lleva un solo registro y llega sin problema; manejando, con una posición cada 6 segundos, el paquete crece. La posible relación con el tamaño del paquete se confirmará con la captura de tráfico.
+**Hipótesis de ese momento** (reemplaza la de 4.4; superada por 4.8): el FMC920 sí envía el paquete de datos, pero no llega completo a Traccar, que solo registra paquetes Teltonika completos. El dispositivo espera la confirmación 30 segundos (tiempo de espera de respuesta del servidor), cierra y reintenta, cada vez con una cola más grande. Estacionada, cada paquete lleva un solo registro y llega sin problema; manejando, con una posición cada 6 segundos, el paquete crece. La posible relación con el tamaño del paquete se confirmará con la captura de tráfico.
 
 Resumen por hora del log (en el servidor):
 
@@ -233,8 +242,6 @@ END {
       k, c[k], d[k], r[k], a[k], p[k], e[k]
 }' /opt/traccar/logs/tracker-server.log.20260925 /opt/traccar/logs/tracker-server.log.20260926 | sort
 ```
-
-
 
 ### 4.8 Captura de tráfico: el dispositivo no recibe la respuesta del servidor
 
@@ -262,18 +269,19 @@ Resumen por conexión de la captura:
 
 Una conexión fallida, paquete por paquete:
 
-14:56:08.87 FMC920 → servidor SYN inicio de conexión
-14:56:08.93 FMC920 → servidor ack 1 la conexión se abre
-14:56:09.04 FMC920 → servidor 17 bytes (IMEI)
-14:56:09.04 servidor → FMC920 1 byte (01) aceptación
-14:56:09.31 servidor → FMC920 1 byte (01) reenvío
-14:56:09.85 servidor → FMC920 1 byte (01) reenvío
-14:56:10.94 servidor → FMC920 1 byte (01) reenvío
-14:56:13.11 servidor → FMC920 1 byte (01) reenvío
-14:56:17.72 servidor → FMC920 1 byte (01) reenvío
-14:56:26.42 servidor → FMC920 1 byte (01) reenvío
-14:56:39.08 FMC920 → servidor FIN, ack 1 cierra sin haber recibido el 01
-
+```
+14:56:08.87  FMC920 → servidor   SYN               inicio de conexión
+14:56:08.93  FMC920 → servidor   ack 1             la conexión se abre
+14:56:09.04  FMC920 → servidor   17 bytes (IMEI)
+14:56:09.04  servidor → FMC920   1 byte (01)       aceptación
+14:56:09.31  servidor → FMC920   1 byte (01)       reenvío
+14:56:09.85  servidor → FMC920   1 byte (01)       reenvío
+14:56:10.94  servidor → FMC920   1 byte (01)       reenvío
+14:56:13.11  servidor → FMC920   1 byte (01)       reenvío
+14:56:17.72  servidor → FMC920   1 byte (01)       reenvío
+14:56:26.42  servidor → FMC920   1 byte (01)       reenvío
+14:56:39.08  FMC920 → servidor   FIN, ack 1        cierra sin haber recibido el 01
+```
 
 Hallazgos:
 
@@ -304,14 +312,14 @@ El script `~/conexiones.awk` resume cada conexión: bytes enviados por cada lado
 
 ### Sincronización (`traccar:sync-positions`)
 
-- **Pedir a Traccar por hora de llegada al servidor, no por `device_time`.** Las posiciones pueden llegar con horas de retraso y con una `device_time` anterior a la última guardada; un sync basado en `device_time` las perdería.
-- **Descartar duplicados.** La idempotencia por `traccar_position_id` no basta, porque Traccar asigna IDs distintos a cada copia. Hay que deduplicar por vehículo, `device_time` y coordenadas.
+- **Ventana hacia atrás amplia.** Las posiciones pueden llegar con horas de retraso y con una `device_time` anterior a la última guardada. La API de Traccar filtra por hora del GPS, no por hora de llegada, así que el sync consulta las últimas 24 h en cada corrida; cubre el retraso máximo medido (8.4 h).
+- **Descartar duplicados.** La idempotencia por `traccar_position_id` no basta, porque Traccar asigna IDs distintos a cada copia. Se deduplica por vehículo, `device_time` y coordenadas, en el sync y con un índice único en `positions`.
 
 ### Dashboard
 
-Umbral de "Sin señal reciente" según el último estado conocido, en lugar de un valor fijo de 10 minutos:
+Umbral de "Sin señal reciente" según el último estado conocido (implementado en `frontend/src/lib/vehicleStatus.ts`):
 
-| Último estado | Hueco máximo medido | Umbral propuesto |
+| Último estado | Hueco máximo medido | Umbral |
 |---|---|---|
 | En movimiento | 318 s | 8 min |
 | Detenido o apagado | cerca de 1 h | 65 min |
@@ -359,7 +367,7 @@ Los nombres exactos de los parámetros deben confirmarse en el Configurator para
 
 - [x] Deduplicar posiciones en el sync y limpiar los 318 duplicados existentes.
 - [x] Revisar que el sync no pierda posiciones que llegan tarde: la API de Traccar filtra por hora del GPS, no por hora de llegada; la ventana de 24 h cubre el retraso máximo medido (8.4 h).
-- [ ] Ajustar los umbrales de "Sin señal reciente" en el dashboard.
+- [x] Ajustar los umbrales de "Sin señal reciente" en el dashboard.
 - [x] Explicar la diferencia entre `odometer` y `totalDistance`.
 
 ### Esperan a los dispositivos nuevos
@@ -375,7 +383,7 @@ Los nombres exactos de los parámetros deben confirmarse en el Configurator para
 ### Hechos
 
 - [x] Capturar el log de Traccar durante un recorrido (secciones 4.7 y 4.8).
-- [x] Analizar la captura de tráfico del puerto 5027 (6 de octubre). Resultado en la sección 4.8.1§
+- [x] Analizar la captura de tráfico del puerto 5027 (6 de octubre). Resultado en la sección 4.8.
 
 ## 8. SIM para la flota (Teltonika / 1GLOBAL)
 
