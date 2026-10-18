@@ -55,3 +55,9 @@ Thumbs.db
 
 # Dataset limpio del Avance 1, comprimido para que el Avance 2 corra sin regenerarlo
 !data/processed/trips_clean.csv.gz
+
+# Partición del Avance 2, necesaria para correr el Avance 3
+!data/processed/X_train_avance2.csv.gz
+!data/processed/X_test_avance2.csv.gz
+!data/processed/y_train_avance2.csv.gz
+!data/processed/y_test_avance2.csv.gz
