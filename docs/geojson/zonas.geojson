@@ -1,0 +1,54 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Cancun", "stroke": "#7c6cf2", "fill": "#7c6cf2" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-86.930, 21.200],
+          [-86.830, 21.200],
+          [-86.795, 21.200],
+          [-86.760, 21.150],
+          [-86.725, 21.140],
+          [-86.740, 21.080],
+          [-86.760, 21.020],
+          [-86.790, 20.995],
+          [-86.812, 20.970],
+          [-86.880, 20.970],
+          [-86.930, 21.010],
+          [-86.930, 21.200]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Playa Mujeres", "stroke": "#3fb68b", "fill": "#3fb68b" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-86.840, 21.200],
+          [-86.795, 21.200],
+          [-86.770, 21.258],
+          [-86.840, 21.258],
+          [-86.840, 21.200]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Costa Mujeres", "stroke": "#e3a946", "fill": "#e3a946" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-86.840, 21.258],
+          [-86.770, 21.258],
+          [-86.760, 21.320],
+          [-86.840, 21.320],
+          [-86.840, 21.258]
+        ]]
+      }
+    }
+  ]
+}

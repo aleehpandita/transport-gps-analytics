@@ -36,10 +36,25 @@ class TripBuilderService
      * Procesa las posiciones de un vehículo en un rango de tiempo y crea los trips detectados.
      * Solo usa posiciones con valid = true.
      *
+     * Si un viaje ya guardado empezó antes de $from y sigue abierto en $from, el rango se
+     * extiende hasta su inicio. Así el viaje se recalcula completo y no aparece una versión
+     * cortada que empiece justo en $from.
+     *
      * @return Collection<Trip>
      */
     public function buildForVehicle(Vehicle $vehicle, string $from, string $to): Collection
     {
+        $spanning = Trip::where('vehicle_id', $vehicle->id)
+            ->where('data_source', 'real')
+            ->where('started_at', '<', $from)
+            ->where('ended_at', '>=', $from)
+            ->orderBy('started_at')
+            ->first();
+
+        if ($spanning) {
+            $from = $spanning->started_at->toDateTimeString();
+        }
+
         $positions = Position::where('vehicle_id', $vehicle->id)
             ->where('valid', true)
             ->whereBetween('device_time', [$from, $to])
@@ -147,6 +162,12 @@ class TripBuilderService
      * Así, un viaje guardado de forma provisional (cortado porque faltaban posiciones) se
      * completa cuando trips:build vuelve a correr sobre un rango que lo incluye.
      *
+     * Si el inicio cambió entre corridas (las posiciones llegan tarde y por partes, ver
+     * docs/piloto-fmc920.md), la versión anterior queda con otro started_at. Por eso, al
+     * guardar, se borran los otros viajes del mismo vehículo que se enciman en horario:
+     * una unidad no puede estar en dos viajes a la vez, así que son versiones viejas
+     * del mismo viaje.
+     *
      * @param Position[] $positions
      */
     protected function closeTrip(Vehicle $vehicle, array $positions, Position $endCandidate): Trip
@@ -164,7 +185,7 @@ class TripBuilderService
         $originZone = $this->zoneMatcher->resolve($first->latitude, $first->longitude);
         $destinationZone = $this->zoneMatcher->resolve($last->latitude, $last->longitude);
 
-        return Trip::updateOrCreate(
+        $trip = Trip::updateOrCreate(
             [
                 'vehicle_id' => $vehicle->id,
                 'started_at' => $first->device_time,
@@ -182,6 +203,15 @@ class TripBuilderService
                 'data_source' => 'real',
             ]
         );
+
+        Trip::where('vehicle_id', $vehicle->id)
+            ->where('data_source', 'real')
+            ->where('id', '!=', $trip->id)
+            ->where('started_at', '<', $trip->ended_at)
+            ->where('ended_at', '>', $trip->started_at)
+            ->delete();
+
+        return $trip;
     }
 
     /**
