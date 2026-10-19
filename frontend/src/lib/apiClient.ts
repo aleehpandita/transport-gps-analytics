@@ -1,4 +1,4 @@
-import type { Collection, Paginated, ScheduledService, Trip, Vehicle } from '../types/api'
+import type { Collection, LivePosition, Paginated, ScheduledService, Trip, Vehicle } from '../types/api'
 
 export class ApiError extends Error {
   readonly status: number
@@ -25,6 +25,10 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
 // Fetchers estables (nivel de módulo) para usarlos con usePolling sin re-crear el efecto
 export const fetchVehicles = (signal: AbortSignal) =>
   getJson<Collection<Vehicle>>('/vehicles', signal).then((r) => r.data)
+
+// Posición en vivo de cada unidad, directo de Traccar (sin pasar por la base). Solo para el mapa.
+export const fetchLiveVehicles = (signal: AbortSignal) =>
+  getJson<Collection<LivePosition>>('/vehicles/live', signal).then((r) => r.data)
 
 // Servicios desde 1 h atrás (pueden seguir en curso) en adelante, los más próximos primero.
 // El backend filtra y ordena; aquí solo se pide la ventana y el tope.

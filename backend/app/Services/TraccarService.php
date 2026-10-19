@@ -69,4 +69,30 @@ class TraccarService
 
         return $response->json();
     }
+
+    /**
+     * Regresa la última posición conocida de cada dispositivo, todos en una sola llamada.
+     * Es lo que usa el mapa en vivo: no guarda nada, solo pregunta qué tiene Traccar ahora.
+     *
+     * Timeout corto a propósito: si Traccar tarda, el mapa se queda con lo último que tenía
+     * y vuelve a preguntar en la siguiente vuelta, en lugar de colgarse esperando.
+     */
+    public function getLatestPositions(): array
+    {
+        $response = Http::withBasicAuth($this->username, $this->password)
+            ->timeout(5)
+            ->get("{$this->baseUrl}/api/positions");
+
+        if ($response->failed()) {
+            Log::warning('TraccarService: fallo al obtener posiciones en vivo', [
+                'status' => $response->status(),
+            ]);
+
+            throw new \RuntimeException(
+                "Error al consultar posiciones en vivo en Traccar: HTTP {$response->status()}"
+            );
+        }
+
+        return $response->json();
+    }
 }

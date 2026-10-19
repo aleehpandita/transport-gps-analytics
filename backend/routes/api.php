@@ -4,7 +4,10 @@ use App\Http\Controllers\Api\ScheduledServiceController;
 use App\Http\Controllers\Api\TripController;
 use App\Http\Controllers\Api\VehicleController;
 use App\Http\Controllers\Api\ZoneController;
+use App\Http\Controllers\Api\LiveVehicleController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/vehicles/live', [LiveVehicleController::class, 'index']);
 
 Route::prefix('vehicles')->group(function () {
     Route::get('/', [VehicleController::class, 'index']);

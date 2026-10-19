@@ -28,6 +28,18 @@ export interface Vehicle {
   stopped_since: string | null // ISO 8601 en UTC; null si la última posición va en movimiento
 }
 
+// GET /api/vehicles/live: última posición de cada unidad, leída directo de Traccar
+export interface LivePosition {
+  vehicle_id: number
+  latitude: number
+  longitude: number
+  speed: number // km/h
+  course: number // grados, 0 = norte
+  ignition: boolean | null
+  valid: boolean
+  device_time: string // ISO 8601 en UTC
+}
+
 export interface Zone {
   id: number
   name: string
