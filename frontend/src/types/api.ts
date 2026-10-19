@@ -24,6 +24,13 @@ export interface Vehicle {
   active: boolean
   distance_today_km: number
   latest_position: LatestPosition | null
+  current_zone: Zone | null // zona de la última posición (punto, polígono o área)
+  stopped_since: string | null // ISO 8601 en UTC; null si la última posición va en movimiento
+}
+
+export interface Zone {
+  id: number
+  name: string
 }
 
 // TripResource

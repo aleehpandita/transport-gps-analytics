@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { ArrivalsPanel } from './components/ArrivalsPanel'
-import { FleetMap } from './components/FleetMap'
+import { FleetMap, type MapFocus } from './components/FleetMap'
 import { FleetTable } from './components/FleetTable'
 import { Header } from './components/Header'
 import { Panel } from './components/Panel'
@@ -17,6 +18,11 @@ export default function App() {
   const vehicles = usePolling(fetchVehicles, VEHICLES_INTERVAL_MS)
   const services = usePolling(fetchScheduledServices, SERVICES_INTERVAL_MS)
   const trips = usePolling(fetchTodayTrips, TRIPS_INTERVAL_MS)
+
+  // Unidad elegida en la tabla. Vive aquí porque la tabla y el mapa son hermanos:
+  // la tabla la cambia y el mapa vuela hacia ella.
+  const [mapFocus, setMapFocus] = useState<MapFocus | null>(null)
+  const focusVehicle = (id: number) => setMapFocus({ id, at: Date.now() })
 
   const fleet = vehicles.data ?? []
   const todayTrips = trips.data ?? []
@@ -36,11 +42,16 @@ export default function App() {
       <main className="grid flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:p-6">
         <div className="flex min-w-0 flex-col gap-4">
           <Panel index={1} title="Mapa de flota" className="min-h-[360px] flex-1">
-            <FleetMap vehicles={fleet} />
+            <FleetMap vehicles={fleet} focus={mapFocus} />
           </Panel>
 
           <Panel index={2} title="Unidades" aside={`${fleet.length} en total`}>
-            <FleetTable vehicles={fleet} loading={vehicles.loading} />
+            <FleetTable
+              vehicles={fleet}
+              loading={vehicles.loading}
+              selectedId={mapFocus?.id ?? null}
+              onSelect={focusVehicle}
+            />
           </Panel>
         </div>
 
