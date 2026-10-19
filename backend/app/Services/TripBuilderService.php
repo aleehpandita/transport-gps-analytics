@@ -10,26 +10,60 @@ use Illuminate\Support\Collection;
 class TripBuilderService
 {
     /**
-     * Segundos de velocidad > 0 sostenida requeridos para confirmar inicio de viaje.
+     * Velocidad (km/h) por debajo de la cual se considera que la unidad está detenida.
+     * No se usa speed == 0 porque el GPS reporta 1 o 2 km/h de ruido estando parada.
+     */
+    protected const IDLE_SPEED_KMH = 3;
+
+    /**
+     * Radio (km) de la regla de permanencia. Con datos reales de Kevs1 (19 oct 2026): en la
+     * bajada de pasajeros de Margaritaville la unidad maniobró unos 4 minutos dentro de
+     * ~150 m (entrada del hotel), sin quedarse quieta 3 minutos seguidos en ningún punto.
+     */
+    protected const DWELL_RADIUS_KM = 0.2;
+
+    /**
+     * Segundos que la ignición debe seguir en false para considerar el motor apagado.
+     * Filtra señales que parpadean: Kevs1 tenía la ignición por voltaje con umbral de 13.2 V,
+     * y su alternador carga justo alrededor de ese valor, así que ignition cambiaba de
+     * true a false cada 1 a 5 segundos, incluso a 56 km/h (ver docs/piloto-fmc920.md).
+     */
+    protected const IGNITION_DEBOUNCE_SECONDS = 60;
+
+    /**
+     * Segundos de movimiento sostenido requeridos para confirmar inicio de viaje.
      */
     protected int $startConfirmationSeconds;
 
     /**
-     * Minutos de ignition = false sostenido requeridos para confirmar fin de viaje.
+     * Minutos de motor apagado sostenido requeridos para confirmar fin de viaje.
      * Calibrado con datos reales: una parada de ~8 min con motor apagado NO es fin de viaje,
      * una parada de >1.5h sí lo es. Punto de partida conservador: 15 minutos.
+     * Con la regla de permanencia casi siempre se cierra antes por esa regla; esta queda
+     * como respaldo.
      */
     protected int $endConfirmationMinutes;
+
+    /**
+     * Minutos dentro del radio DWELL_RADIUS_KM requeridos para cerrar el viaje
+     * (regla de permanencia). No depende de la ignición, así que funciona aunque la señal
+     * de una unidad no sea confiable. Regla temporal (19 oct 2026): el corte definitivo
+     * vendrá de ligar los viajes con las órdenes de servicio.
+     */
+    protected int $dwellEndMinutes;
+
     protected ZoneMatchingService $zoneMatcher;
 
     public function __construct(
         int $startConfirmationSeconds = 30,
         int $endConfirmationMinutes = 15,
-        ?ZoneMatchingService $zoneMatcher = null
+        ?ZoneMatchingService $zoneMatcher = null,
+        int $dwellEndMinutes = 3
     ) {
         $this->startConfirmationSeconds = $startConfirmationSeconds;
         $this->endConfirmationMinutes = $endConfirmationMinutes;
         $this->zoneMatcher = $zoneMatcher ?? new ZoneMatchingService();
+        $this->dwellEndMinutes = $dwellEndMinutes;
     }
 
     /**
@@ -65,6 +99,14 @@ class TripBuilderService
     }
 
     /**
+     * Recorre las posiciones en orden y detecta los viajes.
+     *
+     * Inicio: motor encendido y movimiento sostenido por startConfirmationSeconds.
+     * Fin, lo que pase primero:
+     *   - Regla 1: motor apagado por endConfirmationMinutes.
+     *   - Regla 2 (permanencia): la unidad se queda dentro de DWELL_RADIUS_KM por
+     *     dwellEndMinutes, por ejemplo al dejar pasajeros en un hotel.
+     *
      * @param Collection<Position> $positions Ya ordenadas por device_time, del mismo vehículo.
      * @return Collection<Trip>
      */
@@ -74,66 +116,121 @@ class TripBuilderService
 
         $tripStart = null;         // Position donde arrancó el viaje actual
         $tripPositions = [];       // Posiciones acumuladas del viaje en curso
-        $endCandidate = null;      // Position donde ignition pasó a false (candidato a fin)
-        $movingSince = null;       // Position donde empezó a evaluarse el posible inicio (ignition true)
-        $hasMovedInWindow = false; // true si dentro de la ventana actual hubo al menos una lectura con speed > 0
+        $endCandidate = null;      // Última lectura con motor encendido antes de apagarse (candidato a fin, regla 1)
+        $dwellAnchor = null;       // Position donde se detuvo (candidato a fin, regla 2)
+        $movingSince = null;       // Position donde empezó a evaluarse el posible inicio
+        $hasMovedInWindow = false; // true si dentro de la ventana actual hubo movimiento real
+        $lastIgnitionOn = null;    // Última lectura con ignition = true, para el filtro de ignición
+        $lastClosePoint = null;    // Donde se cerró el viaje anterior
 
         foreach ($positions as $position) {
+            $ignitionOn = $this->isIgnitionOn($position, $lastIgnitionOn);
+
+            if ($position->ignition) {
+                $lastIgnitionOn = $position;
+            }
+
             if ($tripStart === null) {
                 // Buscando inicio de viaje.
-                // No exigimos speed > 0 en CADA lectura (un alto/semáforo con el motor
-                // encendido no debe reiniciar el conteo) — solo exigimos que el motor
+                // No exigimos speed > 0 en CADA lectura (un alto o semáforo con el motor
+                // encendido no debe reiniciar el conteo). Solo exigimos que el motor
                 // esté encendido de forma sostenida y que haya habido movimiento real
                 // en algún punto de esa ventana de tiempo.
-                if ($position->ignition) {
-                    if ($movingSince === null) {
-                        $movingSince = $position;
-                        $hasMovedInWindow = $position->speed > 0;
-                    } else {
-                        if ($position->speed > 0) {
-                            $hasMovedInWindow = true;
-                        }
-
-                        // abs(): Carbon 3 regresa diffInSeconds con signo (puede ser negativo
-                        // según el orden de los objetos comparados) — siempre queremos la
-                        // magnitud del tiempo transcurrido, sin importar el orden.
-                        $elapsed = abs($position->device_time->diffInSeconds($movingSince->device_time));
-
-                        if ($hasMovedInWindow && $elapsed >= $this->startConfirmationSeconds) {
-                            $tripStart = $movingSince;
-                            $tripPositions = [$movingSince, $position];
-                            $movingSince = null;
-                        }
-                    }
-                } else {
+                if (!$ignitionOn) {
                     $movingSince = null;
+                    $hasMovedInWindow = false;
+                    continue;
                 }
+
+                // Mientras siga en el radio donde terminó el viaje anterior (maniobras en la
+                // entrada del hotel, en el estacionamiento) no cuenta como inicio.
+                $insideLastStop = $lastClosePoint !== null
+                    && $this->distanceKm($lastClosePoint, $position) <= self::DWELL_RADIUS_KM;
+
+                $stillWaiting = !$hasMovedInWindow && $position->speed < self::IDLE_SPEED_KMH;
+
+                if ($movingSince === null || $insideLastStop || $stillWaiting) {
+                    // La ventana se recorre a la lectura más reciente mientras siga detenida
+                    // o dentro del radio. Así el viaje empieza cuando de verdad sale y no
+                    // carga la espera.
+                    $movingSince = $position;
+                    $hasMovedInWindow = !$insideLastStop && $position->speed >= self::IDLE_SPEED_KMH;
+                    continue;
+                }
+
+                if ($position->speed > 0) {
+                    $hasMovedInWindow = true;
+                }
+
+                // abs(): Carbon 3 regresa diffInSeconds con signo (puede ser negativo
+                // según el orden de los objetos comparados). Siempre queremos la
+                // magnitud del tiempo transcurrido, sin importar el orden.
+                $elapsed = abs($position->device_time->diffInSeconds($movingSince->device_time));
+
+                if ($hasMovedInWindow && $elapsed >= $this->startConfirmationSeconds) {
+                    $tripStart = $movingSince;
+                    $tripPositions = [$movingSince, $position];
+                    $movingSince = null;
+                    $hasMovedInWindow = false;
+                    $lastClosePoint = null;
+                }
+
                 continue;
             }
 
             // Viaje en curso
             $tripPositions[] = $position;
+            $closingPoint = null;
 
-            if (!$position->ignition) {
+            // Regla 1: motor apagado sostenido.
+            if (!$ignitionOn) {
                 if ($endCandidate === null) {
-                    $endCandidate = $position;
+                    // El fin es la última lectura con el motor encendido, no la lectura en la
+                    // que el filtro confirmó el apagado (que llega IGNITION_DEBOUNCE_SECONDS después).
+                    $endCandidate = $lastIgnitionOn ?? $position;
                 }
 
                 $minutesSinceCandidate = abs($position->device_time->diffInMinutes($endCandidate->device_time));
 
                 if ($minutesSinceCandidate >= $this->endConfirmationMinutes) {
-                    $trips->push($this->closeTrip($vehicle, $tripPositions, $endCandidate));
-
-                    // Reiniciar estado para buscar el siguiente viaje
-                    $tripStart = null;
-                    $tripPositions = [];
-                    $endCandidate = null;
-                    $movingSince = null;
-                    $hasMovedInWindow = false;
+                    $closingPoint = $endCandidate;
                 }
             } else {
-                // ignition volvió a true antes de confirmarse el fin: se cancela el candidato
+                // El motor volvió a encenderse antes de confirmarse el fin: se cancela el candidato.
                 $endCandidate = null;
+            }
+
+            // Regla 2: permanencia dentro del radio.
+            if ($closingPoint === null) {
+                if ($dwellAnchor !== null && $this->distanceKm($dwellAnchor, $position) > self::DWELL_RADIUS_KM) {
+                    // Salió del radio antes de cumplir el tiempo: era tráfico o un semáforo.
+                    $dwellAnchor = null;
+                }
+
+                if ($dwellAnchor === null) {
+                    if ($position->speed < self::IDLE_SPEED_KMH) {
+                        $dwellAnchor = $position;
+                    }
+                } else {
+                    $dwellSeconds = abs($position->device_time->diffInSeconds($dwellAnchor->device_time));
+
+                    if ($dwellSeconds >= $this->dwellEndMinutes * 60) {
+                        $closingPoint = $dwellAnchor;
+                    }
+                }
+            }
+
+            if ($closingPoint !== null) {
+                $trips->push($this->closeTrip($vehicle, $tripPositions, $closingPoint));
+                $lastClosePoint = $closingPoint;
+
+                // Reiniciar estado para buscar el siguiente viaje
+                $tripStart = null;
+                $tripPositions = [];
+                $endCandidate = null;
+                $dwellAnchor = null;
+                $movingSince = null;
+                $hasMovedInWindow = false;
             }
         }
 
@@ -150,6 +247,26 @@ class TripBuilderService
         }
 
         return $trips;
+    }
+
+    /**
+     * Ignición con filtro: el motor cuenta como encendido si esta lectura dice true, o si
+     * hubo una lectura con true hace menos de IGNITION_DEBOUNCE_SECONDS. Así un parpadeo
+     * de la señal no se toma como motor apagado.
+     */
+    protected function isIgnitionOn(Position $position, ?Position $lastIgnitionOn): bool
+    {
+        if ($position->ignition) {
+            return true;
+        }
+
+        if ($lastIgnitionOn === null) {
+            return false;
+        }
+
+        $secondsSinceOn = abs($position->device_time->diffInSeconds($lastIgnitionOn->device_time));
+
+        return $secondsSinceOn < self::IGNITION_DEBOUNCE_SECONDS;
     }
 
     /**
@@ -252,15 +369,17 @@ class TripBuilderService
 
         foreach ($positions as $position) {
             if ($prev !== null) {
-                $total += $this->haversineKm(
-                    $prev->latitude, $prev->longitude,
-                    $position->latitude, $position->longitude
-                );
+                $total += $this->distanceKm($prev, $position);
             }
             $prev = $position;
         }
 
         return round($total, 3);
+    }
+
+    protected function distanceKm(Position $a, Position $b): float
+    {
+        return $this->haversineKm($a->latitude, $a->longitude, $b->latitude, $b->longitude);
     }
 
     protected function haversineKm(float $lat1, float $lon1, float $lat2, float $lon2): float
@@ -279,8 +398,9 @@ class TripBuilderService
     }
 
     /**
-     * Cuenta paradas intermedias (speed = 0 sostenido con ignition = true) dentro del viaje
+     * Cuenta paradas intermedias (velocidad menor a IDLE_SPEED_KMH sostenida) dentro del viaje
      * y el total de segundos detenido. No cuenta como parada el cierre del viaje mismo.
+     * No usa la ignición: en unidades con la señal ruidosa, cada parpadeo cortaría la parada.
      *
      * @return array{0: int, 1: int} [stops_count, stopped_seconds]
      */
@@ -291,7 +411,7 @@ class TripBuilderService
         $stopStart = null;
 
         foreach ($positions as $position) {
-            $isStopped = $position->speed == 0 && $position->ignition;
+            $isStopped = $position->speed < self::IDLE_SPEED_KMH;
 
             if ($isStopped) {
                 if ($stopStart === null) {
