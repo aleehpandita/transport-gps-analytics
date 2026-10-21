@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Place;
 use App\Models\Position;
 use App\Models\Trip;
 use App\Models\Vehicle;
@@ -31,6 +32,31 @@ class TripBuilderService
     protected const IGNITION_DEBOUNCE_SECONDS = 60;
 
     /**
+     * Silencios: en movimiento el FMC920 guarda una posición por distancia (100 m) o por giro
+     * (10°). Detenida no avanza ni gira, así que no guarda nada: una parada corta aparece como
+     * un hueco entre dos posiciones casi en el mismo lugar, sin ninguna lectura en cero.
+     * Con datos reales de Kevs1 (20 oct 2026): las 4 bajadas en la T3 fueron silencios de
+     * 49 a 100 s con la unidad a 5-7 km/h antes y después.
+     */
+    protected const SILENCE_MIN_SECONDS = 30;
+    protected const SILENCE_MAX_METERS = 30;
+
+    /**
+     * Regla de lugar de servicio: dentro del radio de un lugar (banqueta del aeropuerto, lobby
+     * de hotel) basta con ir a menos de PLACE_SLOW_KMH por PLACE_STOP_SECONDS para cerrar el
+     * viaje. Las bajadas y recogidas duran de 1 a 3 minutos, lo mismo que un semáforo largo,
+     * así que solo el lugar las distingue.
+     */
+    protected const PLACE_SLOW_KMH = 10;
+    protected const PLACE_STOP_SECONDS = 15;
+
+    /**
+     * Distancia mínima (km) desde el inicio del viaje para aplicar la regla de lugar. Evita
+     * cerrar un viaje que acaba de arrancar en el mismo lobby donde recogió a los pasajeros.
+     */
+    protected const PLACE_MIN_TRIP_KM = 0.3;
+
+    /**
      * Segundos de movimiento sostenido requeridos para confirmar inicio de viaje.
      */
     protected int $startConfirmationSeconds;
@@ -53,6 +79,9 @@ class TripBuilderService
     protected int $dwellEndMinutes;
 
     protected ZoneMatchingService $zoneMatcher;
+
+    /** @var Collection<int, Place>|null Lugares activos, se cargan una vez por instancia */
+    protected ?Collection $places = null;
 
     public function __construct(
         int $startConfirmationSeconds = 30,
@@ -106,6 +135,12 @@ class TripBuilderService
      *   - Regla 1: motor apagado por endConfirmationMinutes.
      *   - Regla 2 (permanencia): la unidad se queda dentro de DWELL_RADIUS_KM por
      *     dwellEndMinutes, por ejemplo al dejar pasajeros en un hotel.
+     *   - Regla 3 (lugar de servicio): dentro del radio de un lugar del catálogo (places),
+     *     a menos de PLACE_SLOW_KMH por PLACE_STOP_SECONDS. Atrapa las bajadas y recogidas
+     *     rápidas, que duran lo mismo que un semáforo.
+     *
+     * Las reglas 2 y 3 cuentan los silencios (huecos sin posiciones con la unidad en el
+     * mismo lugar) como tiempo detenida.
      *
      * @param Collection<Position> $positions Ya ordenadas por device_time, del mismo vehículo.
      * @return Collection<Trip>
@@ -122,6 +157,9 @@ class TripBuilderService
         $hasMovedInWindow = false; // true si dentro de la ventana actual hubo movimiento real
         $lastIgnitionOn = null;    // Última lectura con ignition = true, para el filtro de ignición
         $lastClosePoint = null;    // Donde se cerró el viaje anterior
+        $placeStop = null;         // Position donde empezó a detenerse dentro de un lugar (candidato a fin, regla 3)
+        $placeStopPlaceId = null;  // Lugar de ese candidato
+        $traveledFar = false;      // true cuando el viaje ya se alejó PLACE_MIN_TRIP_KM de su inicio
 
         foreach ($positions as $position) {
             $ignitionOn = $this->isIgnitionOn($position, $lastIgnitionOn);
@@ -179,8 +217,16 @@ class TripBuilderService
             }
 
             // Viaje en curso
+            $previous = end($tripPositions);
             $tripPositions[] = $position;
             $closingPoint = null;
+
+            // Silencio: hueco largo entre dos posiciones casi en el mismo lugar = estuvo detenida
+            $silence = $previous instanceof Position && $this->isSilence($previous, $position);
+
+            if (!$traveledFar && $this->distanceKm($tripStart, $position) >= self::PLACE_MIN_TRIP_KM) {
+                $traveledFar = true;
+            }
 
             // Regla 1: motor apagado sostenido.
             if (!$ignitionOn) {
@@ -200,6 +246,34 @@ class TripBuilderService
                 $endCandidate = null;
             }
 
+            // Regla 3: detenida en un lugar de servicio (banqueta del aeropuerto, lobby).
+            // Va antes que la de permanencia porque cierra mucho más rápido.
+            if ($closingPoint === null) {
+                $place = $traveledFar ? $this->placeAt($position) : null;
+                $slowHere = $position->speed < self::PLACE_SLOW_KMH || $silence;
+
+                if ($place === null || !$slowHere || $place->id !== $placeStopPlaceId) {
+                    // Fuera del lugar, o pasando sin detenerse: no hay candidato
+                    $placeStop = null;
+                    $placeStopPlaceId = null;
+                }
+
+                if ($place !== null && $slowHere) {
+                    if ($placeStop === null) {
+                        // Si llegó en silencio, se detuvo desde la posición anterior
+                        $startedAtPrevious = $silence && $this->placeAt($previous)?->id === $place->id;
+                        $placeStop = $startedAtPrevious ? $previous : $position;
+                        $placeStopPlaceId = $place->id;
+                    }
+
+                    $stopSeconds = abs($position->device_time->diffInSeconds($placeStop->device_time));
+
+                    if ($stopSeconds >= self::PLACE_STOP_SECONDS) {
+                        $closingPoint = $placeStop;
+                    }
+                }
+            }
+
             // Regla 2: permanencia dentro del radio.
             if ($closingPoint === null) {
                 if ($dwellAnchor !== null && $this->distanceKm($dwellAnchor, $position) > self::DWELL_RADIUS_KM) {
@@ -208,10 +282,15 @@ class TripBuilderService
                 }
 
                 if ($dwellAnchor === null) {
-                    if ($position->speed < self::IDLE_SPEED_KMH) {
+                    if ($silence) {
+                        // Estuvo detenida desde la posición anterior, aunque ninguna lectura diga 0 km/h
+                        $dwellAnchor = $previous;
+                    } elseif ($position->speed < self::IDLE_SPEED_KMH) {
                         $dwellAnchor = $position;
                     }
-                } else {
+                }
+
+                if ($dwellAnchor !== null) {
                     $dwellSeconds = abs($position->device_time->diffInSeconds($dwellAnchor->device_time));
 
                     if ($dwellSeconds >= $this->dwellEndMinutes * 60) {
@@ -229,6 +308,9 @@ class TripBuilderService
                 $tripPositions = [];
                 $endCandidate = null;
                 $dwellAnchor = null;
+                $placeStop = null;
+                $placeStopPlaceId = null;
+                $traveledFar = false;
                 $movingSince = null;
                 $hasMovedInWindow = false;
             }
@@ -247,6 +329,46 @@ class TripBuilderService
         }
 
         return $trips;
+    }
+
+    /**
+     * true si entre $previous y $position la unidad estuvo detenida aunque no haya lecturas
+     * en cero: pasó SILENCE_MIN_SECONDS o más y se movió SILENCE_MAX_METERS o menos.
+     */
+    protected function isSilence(Position $previous, Position $position): bool
+    {
+        $seconds = abs($position->device_time->diffInSeconds($previous->device_time));
+
+        return $seconds >= self::SILENCE_MIN_SECONDS
+            && $this->distanceKm($previous, $position) * 1000 <= self::SILENCE_MAX_METERS;
+    }
+
+    /**
+     * Lugar de servicio donde está la posición, o null. Si dos se enciman, gana el más cercano.
+     */
+    protected function placeAt(Position $position): ?Place
+    {
+        $best = null;
+        $bestKm = INF;
+
+        foreach ($this->activePlaces() as $place) {
+            $km = $this->haversineKm($position->latitude, $position->longitude, $place->latitude, $place->longitude);
+
+            if ($km * 1000 <= $place->radius_m && $km < $bestKm) {
+                $best = $place;
+                $bestKm = $km;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * @return Collection<int, Place>
+     */
+    protected function activePlaces(): Collection
+    {
+        return $this->places ??= Place::where('is_active', true)->get();
     }
 
     /**
@@ -409,13 +531,16 @@ class TripBuilderService
         $stopsCount = 0;
         $stoppedSeconds = 0;
         $stopStart = null;
+        $previous = null;
 
         foreach ($positions as $position) {
-            $isStopped = $position->speed < self::IDLE_SPEED_KMH;
+            // Un silencio desde la posición anterior también es estar detenida
+            $silence = $previous !== null && $this->isSilence($previous, $position);
+            $isStopped = $position->speed < self::IDLE_SPEED_KMH || $silence;
 
             if ($isStopped) {
                 if ($stopStart === null) {
-                    $stopStart = $position;
+                    $stopStart = $silence ? $previous : $position;
                 }
             } else {
                 if ($stopStart !== null) {
@@ -427,6 +552,8 @@ class TripBuilderService
                     $stopStart = null;
                 }
             }
+
+            $previous = $position;
         }
 
         return [$stopsCount, $stoppedSeconds];
