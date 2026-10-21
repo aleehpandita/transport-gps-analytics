@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet'
+import {
+  Circle,
+  GeoJSON,
+  LayerGroup,
+  LayersControl,
+  MapContainer,
+  Marker,
+  TileLayer,
+  Tooltip,
+  useMap,
+  useMapEvents,
+} from 'react-leaflet'
 import L, { type LatLngTuple } from 'leaflet'
-import type { Vehicle } from '../types/api'
+import type { MapZone, Vehicle } from '../types/api'
 import { formatLastSeen, formatSpeed } from '../lib/format'
 import { statusLabel, vehicleStatus, type VehicleStatus } from '../lib/vehicleStatus'
 
@@ -39,16 +50,65 @@ const VAN_SVG = `
     <circle cx="17" cy="17" r="2" />
   </svg>`
 
-// Pulso de las unidades en ruta. Va en una etiqueta <style> porque los íconos de Leaflet
-// son HTML suelto: no pueden usar clases de Tailwind ni animaciones definidas en JSX.
-const PULSE_CSS = `
+// Estilos que Leaflet necesita como CSS normal: el pulso de los íconos (HTML suelto, sin
+// Tailwind) y las etiquetas de zona (tooltips de Leaflet sin su caja blanca por defecto).
+const MAP_CSS = `
   @keyframes fleet-pulse {
     0% { transform: scale(1); opacity: .6; }
     100% { transform: scale(2.2); opacity: 0; }
   }
   @media (prefers-reduced-motion: reduce) {
     .fleet-pulse { animation: none !important; display: none; }
-  }`
+  }
+  .zone-label {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    color: #fff;
+    font: 600 12px/1.2 system-ui, sans-serif;
+    letter-spacing: .02em;
+    text-shadow: 0 0 3px #000, 0 0 3px #000, 0 0 6px rgba(0,0,0,.8);
+    white-space: nowrap;
+  }
+  .zone-label::before { display: none; }`
+
+// Mapas base. "Oscuro" es el de siempre con el filtro de index.css; "Claro" es el
+// OpenStreetMap normal, igual al de Traccar, que se lee mejor de día y en el celular.
+const BASE_LAYERS = {
+  dark: 'Oscuro',
+  light: 'Claro',
+} as const
+type BaseLayerKey = keyof typeof BASE_LAYERS
+
+const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+
+// Color de los bordes de zona: neutro, para que no compita con los colores de estado
+const ZONE_COLOR = '#9aa4bf'
+// Radio por defecto de las zonas por punto, igual que ZoneMatchingService
+const DEFAULT_POINT_RADIUS_KM = 0.5
+
+// El mapa base elegido se recuerda en este navegador. Si el almacenamiento no está
+// disponible (navegación privada, por ejemplo), simplemente arranca en oscuro.
+const BASE_LAYER_STORAGE_KEY = 'fleet-map:base-layer'
+
+function readBaseLayer(): BaseLayerKey {
+  try {
+    const saved = localStorage.getItem(BASE_LAYER_STORAGE_KEY)
+    return saved === 'light' || saved === 'dark' ? saved : 'dark'
+  } catch {
+    return 'dark'
+  }
+}
+
+function saveBaseLayer(key: BaseLayerKey): void {
+  try {
+    localStorage.setItem(BASE_LAYER_STORAGE_KEY, key)
+  } catch {
+    // Sin almacenamiento: no pasa nada, solo no se recuerda
+  }
+}
 
 export interface MapFocus {
   id: number
@@ -57,10 +117,13 @@ export interface MapFocus {
 
 interface FleetMapProps {
   vehicles: Vehicle[]
+  zones?: MapZone[]
   focus?: MapFocus | null
 }
 
-export function FleetMap({ vehicles, focus = null }: FleetMapProps) {
+export function FleetMap({ vehicles, zones = [], focus = null }: FleetMapProps) {
+  const [initialBaseLayer] = useState(readBaseLayer)
+
   // Solo las unidades con posición; las demás no tienen dónde dibujarse
   const points = vehicles.flatMap((vehicle) =>
     vehicle.latest_position
@@ -72,7 +135,7 @@ export function FleetMap({ vehicles, focus = null }: FleetMapProps) {
 
   return (
     <>
-      <style>{PULSE_CSS}</style>
+      <style>{MAP_CSS}</style>
 
       <MapContainer
         center={DEFAULT_CENTER}
@@ -80,11 +143,23 @@ export function FleetMap({ vehicles, focus = null }: FleetMapProps) {
         scrollWheelZoom
         className="h-full min-h-[320px] w-full rounded-b-lg"
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          className="map-tiles-dark"
-        />
+        {/* Selector de la esquina superior derecha: mapa base y capa de zonas */}
+        <LayersControl position="topright">
+          <LayersControl.BaseLayer name={BASE_LAYERS.dark} checked={initialBaseLayer === 'dark'}>
+            <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_URL} className="map-tiles-dark" />
+          </LayersControl.BaseLayer>
+          <LayersControl.BaseLayer name={BASE_LAYERS.light} checked={initialBaseLayer === 'light'}>
+            <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_URL} />
+          </LayersControl.BaseLayer>
+
+          <LayersControl.Overlay name="Zonas" checked>
+            <LayerGroup>
+              <ZonesLayer zones={zones} />
+            </LayerGroup>
+          </LayersControl.Overlay>
+        </LayersControl>
+
+        <RememberBaseLayer />
 
         <FitToPoints points={points.map(({ position }) => [position.latitude, position.longitude])} />
 
@@ -214,6 +289,64 @@ function VehicleMarker({ name, lat, lng, course, status, selected, children }: V
       <Tooltip direction="top">{children}</Tooltip>
     </Marker>
   )
+}
+
+// Las zonas de Feraltar: polígonos con borde suave y su nombre en el centro.
+// Las zonas por punto (aeropuerto, parques, muelles) se dibujan como círculo con su radio.
+function ZonesLayer({ zones }: { zones: MapZone[] }) {
+  return (
+    <>
+      {zones.map((zone) => {
+        if (zone.geometry) {
+          return (
+            <GeoJSON
+              // La geometría no cambia sola; la llave fuerza a redibujar si se reimporta
+              key={`${zone.id}-${zone.geometry_type}`}
+              data={zone.geometry}
+              style={{ color: ZONE_COLOR, weight: 1.5, opacity: 0.7, fillColor: ZONE_COLOR, fillOpacity: 0.06 }}
+              interactive={false}
+            >
+              <Tooltip permanent direction="center" className="zone-label">
+                {zone.name}
+              </Tooltip>
+            </GeoJSON>
+          )
+        }
+
+        if (zone.latitude !== null && zone.longitude !== null) {
+          const radiusKm = zone.geofence_radius_km ?? DEFAULT_POINT_RADIUS_KM
+
+          return (
+            <Circle
+              key={zone.id}
+              center={[zone.latitude, zone.longitude]}
+              radius={radiusKm * 1000}
+              pathOptions={{ color: ZONE_COLOR, weight: 1, opacity: 0.7, dashArray: '4 4', fillOpacity: 0.04 }}
+              interactive={false}
+            >
+              <Tooltip permanent direction="center" className="zone-label">
+                {zone.name}
+              </Tooltip>
+            </Circle>
+          )
+        }
+
+        return null
+      })}
+    </>
+  )
+}
+
+// Guarda el mapa base que elige el usuario, para abrir con el mismo la próxima vez
+function RememberBaseLayer() {
+  useMapEvents({
+    baselayerchange: (event) => {
+      const key = (Object.keys(BASE_LAYERS) as BaseLayerKey[]).find((k) => BASE_LAYERS[k] === event.name)
+      if (key) saveBaseLayer(key)
+    },
+  })
+
+  return null
 }
 
 // Encuadra el mapa una sola vez, cuando llegan las primeras posiciones.

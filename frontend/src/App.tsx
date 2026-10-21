@@ -6,7 +6,13 @@ import { Header } from './components/Header'
 import { Panel } from './components/Panel'
 import { TripsPanel } from './components/TripsPanel'
 import { usePolling } from './hooks/usePolling'
-import { fetchLiveVehicles, fetchScheduledServices, fetchTodayTrips, fetchVehicles } from './lib/apiClient'
+import {
+  fetchLiveVehicles,
+  fetchScheduledServices,
+  fetchTodayTrips,
+  fetchVehicles,
+  fetchZones,
+} from './lib/apiClient'
 import { formatKm } from './lib/format'
 import type { LivePosition, Vehicle } from './types/api'
 
@@ -16,6 +22,8 @@ const LIVE_INTERVAL_MS = 5_000
 const SERVICES_INTERVAL_MS = 60_000
 // El Trip Builder corre cada 10 minutos; pedir más seguido no trae viajes nuevos
 const TRIPS_INTERVAL_MS = 60_000
+// Las zonas casi nunca cambian: basta con refrescarlas cada 10 minutos
+const ZONES_INTERVAL_MS = 10 * 60_000
 
 // Mismo umbral que vehicleStatus.ts: menos de 3 km/h cuenta como detenida
 const IDLE_SPEED_KMH = 3
@@ -25,6 +33,7 @@ export default function App() {
   const live = usePolling(fetchLiveVehicles, LIVE_INTERVAL_MS)
   const services = usePolling(fetchScheduledServices, SERVICES_INTERVAL_MS)
   const trips = usePolling(fetchTodayTrips, TRIPS_INTERVAL_MS)
+  const zones = usePolling(fetchZones, ZONES_INTERVAL_MS)
 
   // Unidad elegida en la tabla. Vive aquí porque la tabla y el mapa son hermanos:
   // la tabla la cambia y el mapa vuela hacia ella.
@@ -51,7 +60,7 @@ export default function App() {
       <main className="grid flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:p-6">
         <div className="flex min-w-0 flex-col gap-4">
           <Panel index={1} title="Mapa de flota" className="min-h-[360px] flex-1">
-            <FleetMap vehicles={fleet} focus={mapFocus} />
+            <FleetMap vehicles={fleet} zones={zones.data ?? []} focus={mapFocus} />
           </Panel>
 
           <Panel index={2} title="Unidades" aside={`${fleet.length} en total`}>

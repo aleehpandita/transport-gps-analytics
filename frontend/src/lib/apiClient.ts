@@ -1,4 +1,4 @@
-import type { Collection, LivePosition, Paginated, ScheduledService, Trip, Vehicle } from '../types/api'
+import type { Collection, LivePosition, MapZone, Paginated, ScheduledService, Trip, Vehicle } from '../types/api'
 
 export class ApiError extends Error {
   readonly status: number
@@ -45,6 +45,10 @@ export const fetchScheduledServices = (signal: AbortSignal) => {
     (r) => r.data,
   )
 }
+
+// Zonas activas con su geometría, para dibujarlas en el mapa
+export const fetchZones = (signal: AbortSignal) =>
+  getJson<Collection<MapZone>>('/zones', signal).then((r) => r.data)
 
 // Viajes de hoy de toda la flota. El backend corta el día en hora Cancún.
 export const fetchTodayTrips = (signal: AbortSignal) =>

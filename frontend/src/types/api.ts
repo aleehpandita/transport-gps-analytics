@@ -1,5 +1,8 @@
 // Tipos de la API de Laravel, alineados con la respuesta real de cada Resource.
 
+// Tipos GeoJSON: vienen con @types/leaflet (dependencia @types/geojson)
+import type { MultiPolygon, Polygon } from 'geojson'
+
 // PositionResource (también se usa en GET /api/vehicles/{id}/latest-position)
 export interface LatestPosition {
   id: number
@@ -43,6 +46,19 @@ export interface LivePosition {
 export interface Zone {
   id: number
   name: string
+}
+
+// ZoneResource (GET /api/zones): la zona completa, con lo necesario para dibujarla
+export interface MapZone extends Zone {
+  region: string | null
+  is_airport: boolean
+  requires_ferry_transfer: boolean
+  time_from_airport_minutes: number | null
+  latitude: number | null
+  longitude: number | null
+  geofence_radius_km: number | null
+  geometry_type: string | null // 'Point', 'Polygon', 'MultiPolygon'...
+  geometry: Polygon | MultiPolygon | null // solo en zonas de polígono
 }
 
 // TripResource
