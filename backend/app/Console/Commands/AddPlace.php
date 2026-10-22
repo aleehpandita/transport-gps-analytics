@@ -58,8 +58,9 @@ class AddPlace extends Command
 
         $zone = $zones->resolve($latitude, $longitude);
 
+        // Busca solo entre los manuales: un hotel importado de OSM con el mismo nombre no se toca
         $place = Place::updateOrCreate(
-            ['name' => $this->argument('name')],
+            ['name' => $this->argument('name'), 'source' => Place::SOURCE_MANUAL],
             [
                 'type' => $type,
                 'latitude' => $latitude,

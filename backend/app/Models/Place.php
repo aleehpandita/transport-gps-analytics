@@ -9,9 +9,16 @@ class Place extends Model
 {
     public const TYPES = ['airport_terminal', 'hotel', 'other'];
 
+    // De dónde viene el lugar (ver la migración add_source_to_places_table)
+    public const SOURCE_MANUAL = 'manual';
+    public const SOURCE_OSM = 'osm';
+    public const SOURCE_LEARNED = 'learned';
+
     protected $fillable = [
         'name',
         'type',
+        'source',
+        'external_id',
         'latitude',
         'longitude',
         'radius_m',
