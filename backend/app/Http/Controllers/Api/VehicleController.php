@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\PositionResource;
 use App\Http\Resources\TripResource;
 use App\Http\Resources\VehicleResource;
+use App\Models\Place;
 use App\Models\Vehicle;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -93,6 +95,96 @@ class VehicleController extends Controller
         }
 
         return TripResource::collection($query->paginate(50));
+    }
+
+    /**
+     * El recorrido completo de un día (hora Cancún), para el historial y la repetición.
+     *
+     *   GET /api/vehicles/2/route?date=2026-10-21
+     *
+     * Las posiciones van compactas, como arreglos [timestamp, lat, lng, km/h, rumbo]: un día de
+     * Kevs1 tiene miles, y así la respuesta pesa la tercera parte que con objetos.
+     * Cada viaje trae, además de sus zonas, el lugar del catálogo donde empezó y terminó.
+     */
+    public function route(Request $request, Vehicle $vehicle): JsonResponse
+    {
+        $this->ensureVisible($request, $vehicle);
+
+        $validated = $request->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+
+        $day = isset($validated['date'])
+            ? CarbonImmutable::createFromFormat('Y-m-d', $validated['date'], 'America/Cancun')
+            : CarbonImmutable::now('America/Cancun');
+
+        $from = $day->startOfDay()->utc();
+        $to = $day->endOfDay()->utc();
+
+        $positions = $vehicle->positions()
+            ->where('valid', true)
+            ->whereBetween('device_time', [$from, $to])
+            ->orderBy('device_time')
+            ->get(['device_time', 'latitude', 'longitude', 'speed', 'course']);
+
+        $points = $positions->map(fn ($p) => [
+            $p->device_time->getTimestamp(),
+            round((float) $p->latitude, 6),
+            round((float) $p->longitude, 6),
+            round((float) $p->speed, 1),
+            (int) round((float) $p->course),
+        ])->values();
+
+        // Coordenadas por segundo, para ubicar el inicio y el fin de cada viaje
+        $byTimestamp = $positions->keyBy(fn ($p) => $p->device_time->getTimestamp());
+        $places = Place::where('is_active', true)->get(['name', 'latitude', 'longitude', 'radius_m']);
+
+        $trips = $vehicle->trips()
+            ->with(['originZone', 'destinationZone'])
+            ->where('data_source', 'real')
+            ->whereBetween('started_at', [$from, $to])
+            ->orderBy('started_at')
+            ->get()
+            ->map(function ($trip) use ($request, $byTimestamp, $places) {
+                $start = $byTimestamp->get($trip->started_at->getTimestamp());
+                $end = $byTimestamp->get($trip->ended_at->getTimestamp());
+
+                return array_merge((new TripResource($trip))->resolve($request), [
+                    'origin_place' => $start ? $this->placeNameAt($places, $start->latitude, $start->longitude) : null,
+                    'destination_place' => $end ? $this->placeNameAt($places, $end->latitude, $end->longitude) : null,
+                ]);
+            });
+
+        return response()->json([
+            'data' => [
+                'date' => $day->toDateString(),
+                'points' => $points,
+                'trips' => $trips,
+            ],
+        ]);
+    }
+
+    /**
+     * Nombre del lugar activo más cercano que contiene el punto, o null.
+     */
+    protected function placeNameAt($places, float $lat, float $lng): ?string
+    {
+        $best = null;
+        $bestMeters = INF;
+
+        foreach ($places as $place) {
+            $dLat = deg2rad($place->latitude - $lat);
+            $dLng = deg2rad($place->longitude - $lng);
+            $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat)) * cos(deg2rad($place->latitude)) * sin($dLng / 2) ** 2;
+            $meters = 6371000 * 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+            if ($meters <= $place->radius_m && $meters < $bestMeters) {
+                $best = $place->name;
+                $bestMeters = $meters;
+            }
+        }
+
+        return $best;
     }
 
     protected function todayRangeInCancun(): array

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Dashboard } from './components/Dashboard'
+import { HistoryView } from './components/HistoryView'
 import { LoginScreen } from './components/LoginScreen'
 import { AUTH_EXPIRED_EVENT, fetchMe, logout } from './lib/apiClient'
 import type { User } from './types/api'
@@ -9,9 +10,32 @@ type AuthState =
   | { status: 'guest' }
   | { status: 'authenticated'; user: User }
 
-// Decide qué se muestra: el login o el panel. El panel completo vive en Dashboard.tsx.
+// Rutas por hash, sin librería: #/ es el mapa en vivo y #/historial/2/2026-10-21 el historial.
+// Con hash, Nginx no necesita configuración extra para que funcione recargar la página.
+type Route = { page: 'live' } | { page: 'history'; vehicleId: number | null; date: string | null }
+
+function parseHash(hash: string): Route {
+  const match = hash.match(/^#\/historial(?:\/(\d+))?(?:\/(\d{4}-\d{2}-\d{2}))?/)
+  if (!match) return { page: 'live' }
+  return { page: 'history', vehicleId: match[1] ? Number(match[1]) : null, date: match[2] ?? null }
+}
+
+function useHashRoute(): Route {
+  const [route, setRoute] = useState(() => parseHash(window.location.hash))
+
+  useEffect(() => {
+    const onChange = () => setRoute(parseHash(window.location.hash))
+    window.addEventListener('hashchange', onChange)
+    return () => window.removeEventListener('hashchange', onChange)
+  }, [])
+
+  return route
+}
+
+// Decide qué se muestra: el login, el mapa en vivo o el historial
 export default function App() {
   const [auth, setAuth] = useState<AuthState>({ status: 'checking' })
+  const route = useHashRoute()
 
   // Al abrir: si la cookie de sesión sigue viva, entra directo sin pedir contraseña
   useEffect(() => {
@@ -48,6 +72,19 @@ export default function App() {
 
   if (auth.status === 'guest') {
     return <LoginScreen onLoggedIn={(user) => setAuth({ status: 'authenticated', user })} />
+  }
+
+  if (route.page === 'history') {
+    return (
+      <HistoryView
+        // Al cambiar de unidad o día desde un link, el historial arranca de cero
+        key={`${route.vehicleId ?? ''}-${route.date ?? ''}`}
+        user={auth.user}
+        initialVehicleId={route.vehicleId}
+        initialDate={route.date}
+        onLogout={handleLogout}
+      />
+    )
   }
 
   return <Dashboard user={auth.user} onLogout={handleLogout} />

@@ -3,6 +3,7 @@ import type {
   LivePosition,
   MapZone,
   Paginated,
+  RouteDay,
   ScheduledService,
   Trip,
   User,
@@ -121,6 +122,12 @@ export const fetchScheduledServices = (signal: AbortSignal) => {
 // Zonas activas con su geometría, para dibujarlas en el mapa
 export const fetchZones = (signal: AbortSignal) =>
   getJson<Collection<MapZone>>('/zones', signal).then((r) => r.data)
+
+// Recorrido completo de una unidad en un día de Cancún (YYYY-MM-DD), para el historial
+export const fetchVehicleRoute = (vehicleId: number, date: string, signal?: AbortSignal) =>
+  getJson<{ data: RouteDay }>(`/vehicles/${vehicleId}/route?date=${encodeURIComponent(date)}`, signal).then(
+    (r) => r.data,
+  )
 
 // Viajes de hoy de las unidades del usuario. El backend corta el día en hora Cancún.
 export const fetchTodayTrips = (signal: AbortSignal) =>

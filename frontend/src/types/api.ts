@@ -117,3 +117,18 @@ export interface User {
   email: string
   role: 'admin' | 'client'
 }
+
+// GET /api/vehicles/{id}/route?date=...: el recorrido de un día para el historial.
+// Cada posición es [timestamp en segundos, latitud, longitud, km/h, rumbo en grados].
+export type RoutePoint = [number, number, number, number, number]
+
+export interface RouteTrip extends Trip {
+  origin_place: string | null // lugar del catálogo donde empezó, si hay
+  destination_place: string | null
+}
+
+export interface RouteDay {
+  date: string // YYYY-MM-DD, día de Cancún
+  points: RoutePoint[]
+  trips: RouteTrip[]
+}

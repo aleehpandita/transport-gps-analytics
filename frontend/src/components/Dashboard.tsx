@@ -59,6 +59,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       <Header vehicles={fleet} updatedAt={vehicles.updatedAt} error={vehicles.error} />
 
       <div className="flex items-center justify-end gap-3 border-b border-line px-4 py-2 text-sm text-ink-muted lg:px-6">
+        <a
+          href="#/historial"
+          className="mr-auto inline-flex items-center gap-2 rounded-md border border-ok/50 bg-ok/15 px-3 py-1.5 font-medium text-ok transition-colors hover:bg-ok/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ok"
+        >
+          {/* Reloj con flecha hacia atrás: ver lo que ya pasó */}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+            <path d="M3 3v5h5" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          Historial de recorridos
+        </a>
         <span>
           {user.name}
           <span className="ml-2 font-mono text-[11px] tracking-[0.14em] uppercase">

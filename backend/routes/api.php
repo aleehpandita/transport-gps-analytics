@@ -25,6 +25,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{vehicle}/latest-position', [VehicleController::class, 'latestPosition']);
         Route::get('/{vehicle}/positions', [VehicleController::class, 'positions']);
         Route::get('/{vehicle}/trips', [VehicleController::class, 'trips']);
+        Route::get('/{vehicle}/route', [VehicleController::class, 'route']);
     });
 
     Route::get('/trips', [TripController::class, 'index']);
