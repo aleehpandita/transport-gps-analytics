@@ -1,27 +1,38 @@
 <?php
 
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\LiveVehicleController;
 use App\Http\Controllers\Api\ScheduledServiceController;
 use App\Http\Controllers\Api\TripController;
 use App\Http\Controllers\Api\VehicleController;
 use App\Http\Controllers\Api\ZoneController;
-use App\Http\Controllers\Api\LiveVehicleController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/vehicles/live', [LiveVehicleController::class, 'index']);
+// Lo único público: iniciar sesión
+Route::post('/login', [AuthController::class, 'login']);
 
-Route::prefix('vehicles')->group(function () {
-    Route::get('/', [VehicleController::class, 'index']);
-    Route::get('/{vehicle}', [VehicleController::class, 'show']);
-    Route::get('/{vehicle}/latest-position', [VehicleController::class, 'latestPosition']);
-    Route::get('/{vehicle}/positions', [VehicleController::class, 'positions']);
-    Route::get('/{vehicle}/trips', [VehicleController::class, 'trips']);
-});
+// Todo lo demás requiere sesión. Cada controlador filtra por las unidades del usuario.
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/me', [AuthController::class, 'me']);
+    Route::post('/logout', [AuthController::class, 'logout']);
 
-Route::get('/trips', [TripController::class, 'index']);
+    // Antes del grupo de /vehicles/{vehicle}: si no, "live" se tomaría como el id de una unidad
+    Route::get('/vehicles/live', [LiveVehicleController::class, 'index']);
 
-Route::get('/zones', [ZoneController::class, 'index']);
+    Route::prefix('vehicles')->group(function () {
+        Route::get('/', [VehicleController::class, 'index']);
+        Route::get('/{vehicle}', [VehicleController::class, 'show']);
+        Route::get('/{vehicle}/latest-position', [VehicleController::class, 'latestPosition']);
+        Route::get('/{vehicle}/positions', [VehicleController::class, 'positions']);
+        Route::get('/{vehicle}/trips', [VehicleController::class, 'trips']);
+    });
 
-Route::prefix('scheduled-services')->group(function () {
-    Route::get('/', [ScheduledServiceController::class, 'index']);
-    Route::post('/', [ScheduledServiceController::class, 'store']);
+    Route::get('/trips', [TripController::class, 'index']);
+
+    Route::get('/zones', [ZoneController::class, 'index']);
+
+    Route::prefix('scheduled-services')->group(function () {
+        Route::get('/', [ScheduledServiceController::class, 'index']);
+        Route::post('/', [ScheduledServiceController::class, 'store']);
+    });
 });

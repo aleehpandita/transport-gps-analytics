@@ -13,7 +13,7 @@ use Illuminate\Validation\Rule;
 class TripController extends Controller
 {
     /**
-     * Viajes de toda la flota en un día operativo de Cancún.
+     * Viajes de las unidades del usuario en un día operativo de Cancún.
      *
      *   GET /api/trips                         hoy
      *   GET /api/trips?date=2026-10-06         un día específico
@@ -34,14 +34,15 @@ class TripController extends Controller
             ? CarbonImmutable::createFromFormat('Y-m-d', $validated['date'], 'America/Cancun')
             : CarbonImmutable::now('America/Cancun');
 
-        $trips = Trip::with(['vehicle', 'originZone', 'destinationZone'])
+        $query = Trip::with(['vehicle', 'originZone', 'destinationZone'])
             ->where('data_source', $validated['data_source'] ?? 'real')
             ->whereBetween('started_at', [
                 $day->startOfDay()->utc(),
                 $day->endOfDay()->utc(),
             ])
-            ->orderByDesc('started_at')
-            ->get();
+            ->orderByDesc('started_at');
+
+        $trips = $request->user()->restrictToVisibleVehicles($query)->get();
 
         return TripResource::collection($trips);
     }

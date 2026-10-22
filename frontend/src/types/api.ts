@@ -109,3 +109,11 @@ export interface Paginated<T> extends Collection<T> {
     total: number
   }
 }
+
+// GET /api/me y POST /api/login: el usuario con sesión
+export interface User {
+  id: number
+  name: string
+  email: string
+  role: 'admin' | 'client'
+}

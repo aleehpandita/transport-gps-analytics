@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Vehicle;
 use App\Services\TraccarService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
@@ -20,13 +21,15 @@ class LiveVehicleController extends Controller
     // Traccar regresa la velocidad en nudos, igual que en traccar:sync-positions
     protected const KNOTS_TO_KMH = 1.852;
 
-    // Si hay varias pestañas abiertas, Traccar recibe una sola consulta cada 3 segundos
+    // Una sola consulta a Traccar cada 3 segundos, sin importar cuántos usuarios o pestañas
     protected const CACHE_SECONDS = 3;
 
-    public function index(TraccarService $traccar): JsonResponse
+    public function index(Request $request, TraccarService $traccar): JsonResponse
     {
         try {
-            $data = Cache::remember('vehicles:live', now()->addSeconds(self::CACHE_SECONDS), function () use ($traccar) {
+            // El caché guarda TODA la flota; el filtro por usuario va después, fuera del caché,
+            // para que un cliente nunca reciba lo que se guardó para otro.
+            $all = Cache::remember('vehicles:live', now()->addSeconds(self::CACHE_SECONDS), function () use ($traccar) {
                 // traccar_device_id => id de la unidad en nuestra base
                 $vehicleIds = Vehicle::whereNotNull('traccar_device_id')->pluck('id', 'traccar_device_id');
 
@@ -49,6 +52,10 @@ class LiveVehicleController extends Controller
             // Traccar no respondió: el mapa conserva lo último que tenía y vuelve a intentar
             return response()->json(['message' => $e->getMessage()], 503);
         }
+
+        $visibleIds = $request->user()->visibleVehicles()->pluck('id')->flip();
+
+        $data = array_values(array_filter($all, fn (array $p) => isset($visibleIds[$p['vehicle_id']])));
 
         return response()->json(['data' => $data]);
     }

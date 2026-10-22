@@ -13,7 +13,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 class ScheduledServiceController extends Controller
 {
     /**
-     * Servicios programados, con filtros opcionales.
+     * Servicios programados de las unidades del usuario, con filtros opcionales.
      *
      *   GET /api/scheduled-services
      *   GET /api/scheduled-services?from=2026-10-06T14:00:00Z
@@ -23,6 +23,8 @@ class ScheduledServiceController extends Controller
      * - Con rango, el orden es cronológico (lo próximo primero), que es lo que necesita el
      *   dashboard. Sin rango, se mantiene el orden anterior: lo más reciente primero.
      * - per_page: tamaño de página, de 1 a 200 (50 por defecto).
+     * - Un cliente solo ve los servicios de sus unidades; si pide un vehicle_id ajeno,
+     *   la lista sale vacía.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -36,7 +38,9 @@ class ScheduledServiceController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
         ]);
 
-        $query = ScheduledService::with(['vehicle', 'destinationZone']);
+        $query = $request->user()->restrictToVisibleVehicles(
+            ScheduledService::with(['vehicle', 'destinationZone'])
+        );
 
         if (isset($validated['vehicle_id'])) {
             $query->where('vehicle_id', $validated['vehicle_id']);
@@ -61,8 +65,13 @@ class ScheduledServiceController extends Controller
         );
     }
 
+    /**
+     * Solo un admin da de alta servicios.
+     */
     public function store(StoreScheduledServiceRequest $request): ScheduledServiceResource
     {
+        abort_unless($request->user()->isAdmin(), 403, 'Solo un administrador puede crear servicios.');
+
         $service = ScheduledService::create($request->validated());
 
         return new ScheduledServiceResource($service->load(['vehicle', 'destinationZone']));

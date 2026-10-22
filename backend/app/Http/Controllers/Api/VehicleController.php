@@ -11,14 +11,19 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
+/**
+ * Unidades del usuario con sesión. Un cliente solo ve las suyas: si pide una unidad
+ * ajena recibe 404, como si no existiera.
+ */
 class VehicleController extends Controller
 {
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
         [$startOfDay, $endOfDay] = $this->todayRangeInCancun();
 
         return VehicleResource::collection(
-            Vehicle::where('active', true)
+            $request->user()->visibleVehicles()
+                ->where('active', true)
                 ->with('latestPosition')
                 ->withSum(['trips as distance_today_km' => function ($query) use ($startOfDay, $endOfDay) {
                     $query->whereBetween('started_at', [$startOfDay, $endOfDay])->where('data_source', 'real');
@@ -27,8 +32,10 @@ class VehicleController extends Controller
         );
     }
 
-    public function show(Vehicle $vehicle): VehicleResource
+    public function show(Request $request, Vehicle $vehicle): VehicleResource
     {
+        $this->ensureVisible($request, $vehicle);
+
         [$startOfDay, $endOfDay] = $this->todayRangeInCancun();
 
         $vehicle->load('latestPosition');
@@ -39,16 +46,10 @@ class VehicleController extends Controller
         return new VehicleResource($vehicle);
     }
 
-    protected function todayRangeInCancun(): array
+    public function latestPosition(Request $request, Vehicle $vehicle): PositionResource|JsonResponse
     {
-        return [
-            now('America/Cancun')->startOfDay()->utc(),
-            now('America/Cancun')->endOfDay()->utc(),
-        ];
-    }
+        $this->ensureVisible($request, $vehicle);
 
-    public function latestPosition(Vehicle $vehicle): PositionResource|JsonResponse
-    {
         $position = $vehicle->latestPosition;
 
         if (!$position) {
@@ -60,6 +61,8 @@ class VehicleController extends Controller
 
     public function positions(Request $request, Vehicle $vehicle): AnonymousResourceCollection
     {
+        $this->ensureVisible($request, $vehicle);
+
         $query = $vehicle->positions()->orderByDesc('device_time');
 
         if ($request->filled('data_source')) {
@@ -81,6 +84,8 @@ class VehicleController extends Controller
 
     public function trips(Request $request, Vehicle $vehicle): AnonymousResourceCollection
     {
+        $this->ensureVisible($request, $vehicle);
+
         $query = $vehicle->trips()->orderByDesc('started_at');
 
         if ($request->filled('data_source')) {
@@ -88,5 +93,21 @@ class VehicleController extends Controller
         }
 
         return TripResource::collection($query->paginate(50));
+    }
+
+    protected function todayRangeInCancun(): array
+    {
+        return [
+            now('America/Cancun')->startOfDay()->utc(),
+            now('America/Cancun')->endOfDay()->utc(),
+        ];
+    }
+
+    /**
+     * 404 y no 403 a propósito: a un cliente no se le confirma que la unidad existe.
+     */
+    protected function ensureVisible(Request $request, Vehicle $vehicle): void
+    {
+        abort_unless($request->user()->canSeeVehicle($vehicle), 404);
     }
 }
