@@ -5,9 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TripResource;
 use App\Models\Trip;
+use App\Services\TripPlaceResolver;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Validation\Rule;
 
 class TripController extends Controller
@@ -22,8 +23,11 @@ class TripController extends Controller
      * El día se corta en America/Cancun, no en UTC: la base guarda UTC, y un viaje a
      * las 20:00 en Cancún ya es del día siguiente en UTC. Mismo criterio que
      * distance_today_km en VehicleController.
+     *
+     * Cada viaje trae, además de sus zonas, el lugar del catálogo donde empezó y terminó
+     * (origin_place, destination_place), o null si no fue en un lugar conocido.
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request, TripPlaceResolver $placeResolver): JsonResponse
     {
         $validated = $request->validate([
             'date' => ['nullable', 'date_format:Y-m-d'],
@@ -43,7 +47,13 @@ class TripController extends Controller
             ->orderByDesc('started_at');
 
         $trips = $request->user()->restrictToVisibleVehicles($query)->get();
+        $places = $placeResolver->resolve($trips);
 
-        return TripResource::collection($trips);
+        return response()->json([
+            'data' => $trips->map(fn (Trip $trip) => array_merge(
+                (new TripResource($trip))->resolve($request),
+                $places[$trip->id] ?? ['origin_place' => null, 'destination_place' => null],
+            ))->values(),
+        ]);
     }
 }

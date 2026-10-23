@@ -128,7 +128,7 @@ export function HistoryView({ user, initialVehicleId, initialDate, onLogout }: H
   const vehicleName = vehicles.find((v) => v.id === vehicleId)?.name ?? 'la unidad'
 
   return (
-    <div className="flex h-full min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
       <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 lg:px-6">
         <h1 className="text-lg font-semibold">Historial</h1>
 
@@ -195,8 +195,8 @@ export function HistoryView({ user, initialVehicleId, initialDate, onLogout }: H
         </nav>
       </header>
 
-      <div className="grid flex-1 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-b border-line lg:border-r lg:border-b-0">
+      <div className="grid flex-1 lg:min-h-0 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <aside className="flex max-h-[50vh] min-h-0 flex-col border-b border-line lg:max-h-none lg:border-r lg:border-b-0">
           {route && trips.length > 0 && (
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-line px-4 py-4 text-sm lg:px-5">
               <div>
@@ -292,8 +292,8 @@ export function HistoryView({ user, initialVehicleId, initialDate, onLogout }: H
           </div>
         </aside>
 
-        <section className="flex min-h-[60vh] flex-col" aria-label="Mapa del recorrido">
-          <div className="relative flex-1">
+        <section className="flex min-h-[70vh] flex-col lg:min-h-0" aria-label="Mapa del recorrido">
+          <div className="relative min-h-0 flex-1">
             <RouteMap points={points} trips={trips} selectedTripId={selectedTripId} frame={playback.frame} follow={follow} />
 
             <ul className="pointer-events-none absolute bottom-3 left-3 z-[1000] flex flex-col gap-1 rounded-md bg-surface/90 px-3 py-2 text-xs">

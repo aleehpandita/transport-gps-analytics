@@ -17,3 +17,9 @@ curl -s -o docs/data/osm_hoteles.json -w "HTTP %{http_code}\n" \
   --data-urlencode 'data=[out:json][timeout:90];(nwr["tourism"="hotel"]["name"](20.15,-87.55,21.35,-86.70);nwr["leisure"="resort"]["name"](20.15,-87.55,21.35,-86.70););out center tags;' \
   https://overpass-api.de/api/interpreter
 ```
+
+## osm_semaforos.json
+
+Semáforos (highway=traffic_signals) de Tulum a Costa Mujeres, descargados de OpenStreetMap
+con Overpass el 22 de octubre de 2026: 538 nodos. Se importan con
+`php artisan signals:import-osm`. Mismo aviso de licencia ODbL que arriba.

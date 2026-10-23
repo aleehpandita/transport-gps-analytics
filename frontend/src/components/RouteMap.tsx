@@ -51,7 +51,7 @@ export function RouteMap({ points, trips, selectedTripId, frame, follow }: Route
       zoom={11}
       scrollWheelZoom
       preferCanvas // miles de tramos: el lienzo dibuja mucho más rápido que SVG
-      className="h-full min-h-[360px] w-full"
+      className="h-full min-h-[300px] w-full"
     >
       <LayersControl position="topright">
         <LayersControl.BaseLayer name="Oscuro" checked={initialBase === 'dark'}>
@@ -62,6 +62,7 @@ export function RouteMap({ points, trips, selectedTripId, frame, follow }: Route
         </LayersControl.BaseLayer>
       </LayersControl>
       <RememberBaseLayer />
+      <InvalidateOnResize />
 
       <RouteLayer points={points} trips={trips} selectedTripId={selectedTripId} />
       <FitRoute points={points} trips={trips} selectedTripId={selectedTripId} />
@@ -192,6 +193,21 @@ function Playhead({ frame, follow }: { frame: PlaybackFrame; follow: boolean }) 
   }, [map, follow, frame.lat, frame.lng])
 
   return <Marker position={[frame.lat, frame.lng]} icon={icon} interactive={false} zIndexOffset={1000} />
+}
+
+// Leaflet mide el mapa una sola vez, al montarse. Si después cambia de tamaño (la lista de
+// viajes termina de cargar, se gira el celular, se cambia el tamaño de la ventana), dibuja
+// mosaicos solo en el tamaño viejo y el resto queda negro. Esto lo vuelve a medir.
+function InvalidateOnResize() {
+  const map = useMap()
+
+  useEffect(() => {
+    const observer = new ResizeObserver(() => map.invalidateSize())
+    observer.observe(map.getContainer())
+    return () => observer.disconnect()
+  }, [map])
+
+  return null
 }
 
 function RememberBaseLayer() {

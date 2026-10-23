@@ -19,8 +19,8 @@ export function Header({ vehicles, updatedAt, error }: HeaderProps) {
   return (
     <header className="flex flex-wrap items-end justify-between gap-6 border-b border-line px-6 py-5">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Feraltar</h1>
-        <p className="text-sm text-ink-muted">Operación en vivo, Cancún y Riviera Maya</p>
+        <h1 className="text-xl font-semibold tracking-tight">Ek ★ Mira</h1>
+        <p className="text-sm text-ink-muted">Tu flota en vivo - v1.0.0</p>
       </div>
 
       <dl className="flex flex-wrap gap-8">

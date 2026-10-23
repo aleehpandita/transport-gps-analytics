@@ -76,6 +76,10 @@ export interface Trip {
   stopped_seconds: number
   origin_zone: string | null
   destination_zone: string | null
+  // Lugar del catálogo donde empezó y terminó (lobby, terminal), si fue en uno.
+  // Vienen en GET /api/trips y en el historial; en otros endpoints pueden no venir.
+  origin_place?: string | null
+  destination_place?: string | null
   data_source: string // 'real' o 'synthetic'
 }
 
@@ -123,7 +127,7 @@ export interface User {
 export type RoutePoint = [number, number, number, number, number]
 
 export interface RouteTrip extends Trip {
-  origin_place: string | null // lugar del catálogo donde empezó, si hay
+  origin_place: string | null // en el historial siempre vienen
   destination_place: string | null
 }
 

@@ -17,11 +17,26 @@ class TripBuilderService
     protected const IDLE_SPEED_KMH = 3;
 
     /**
-     * Radio (km) de la regla de permanencia. Con datos reales de Kevs1 (19 oct 2026): en la
-     * bajada de pasajeros de Margaritaville la unidad maniobró unos 4 minutos dentro de
-     * ~150 m (entrada del hotel), sin quedarse quieta 3 minutos seguidos en ningún punto.
+     * Radio (km) de la regla de permanencia: la unidad tiene que estar quieta de verdad.
+     * Antes eran 200 m (19 oct), para atrapar bajadas con maniobras en la entrada del hotel;
+     * desde el 22 oct esas las atrapa la regla de lugar, y con 200 m una fila de semáforo
+     * (avanza, se para, avanza) cortaba el viaje: pasó dos días seguidos en el mismo cruce.
      */
-    protected const DWELL_RADIUS_KM = 0.2;
+    protected const DWELL_RADIUS_KM = 0.06;
+
+    /**
+     * Radio (km) que hay que dejar atrás, después de cerrar un viaje, para que empiece el
+     * siguiente. Así las maniobras en la entrada del hotel o en el estacionamiento no cuentan
+     * como un viaje nuevo.
+     */
+    protected const LEAVE_RADIUS_KM = 0.2;
+
+    /**
+     * Semáforos: un alto a menos de SIGNAL_METERS de un semáforo de OpenStreetMap solo cierra
+     * el viaje si dura SIGNAL_DWELL_MINUTES o más. Un rojo largo en Cancún puede pasar de 3 min.
+     */
+    protected const SIGNAL_METERS = 40;
+    protected const SIGNAL_DWELL_MINUTES = 10;
 
     /**
      * Segundos que la ignición debe seguir en false para considerar el motor apagado.
@@ -72,13 +87,15 @@ class TripBuilderService
 
     /**
      * Minutos dentro del radio DWELL_RADIUS_KM requeridos para cerrar el viaje
-     * (regla de permanencia). No depende de la ignición, así que funciona aunque la señal
-     * de una unidad no sea confiable. Regla temporal (19 oct 2026): el corte definitivo
-     * vendrá de ligar los viajes con las órdenes de servicio.
+     * (regla de permanencia) cuando NO es un lugar conocido. No depende de la ignición.
+     * 3 min el 19 oct; 5 min desde el 22 oct: un rojo de 3 min 10 s cortaba viajes, y las
+     * bajadas rápidas en hoteles y terminales ya las atrapa la regla de lugar.
      */
     protected int $dwellEndMinutes;
 
     protected ZoneMatchingService $zoneMatcher;
+
+    protected ?SignalIndex $signalIndex = null;
 
     /** @var Collection<int, Place>|null Lugares activos, se cargan una vez por instancia */
     protected ?Collection $places = null;
@@ -87,7 +104,7 @@ class TripBuilderService
         int $startConfirmationSeconds = 30,
         int $endConfirmationMinutes = 15,
         ?ZoneMatchingService $zoneMatcher = null,
-        int $dwellEndMinutes = 3
+        int $dwellEndMinutes = 5
     ) {
         $this->startConfirmationSeconds = $startConfirmationSeconds;
         $this->endConfirmationMinutes = $endConfirmationMinutes;
@@ -133,8 +150,9 @@ class TripBuilderService
      * Inicio: motor encendido y movimiento sostenido por startConfirmationSeconds.
      * Fin, lo que pase primero:
      *   - Regla 1: motor apagado por endConfirmationMinutes.
-     *   - Regla 2 (permanencia): la unidad se queda dentro de DWELL_RADIUS_KM por
-     *     dwellEndMinutes, por ejemplo al dejar pasajeros en un hotel.
+     *   - Regla 2 (permanencia): la unidad se queda quieta, dentro de DWELL_RADIUS_KM, por
+     *     dwellEndMinutes (SIGNAL_DWELL_MINUTES junto a un semáforo). Para paradas en
+     *     lugares que todavía no están en el catálogo, como una casa.
      *   - Regla 3 (lugar de servicio): dentro del radio de un lugar del catálogo (places),
      *     a menos de PLACE_SLOW_KMH por PLACE_STOP_SECONDS. Atrapa las bajadas y recogidas
      *     rápidas, que duran lo mismo que un semáforo.
@@ -183,7 +201,7 @@ class TripBuilderService
                 // Mientras siga en el radio donde terminó el viaje anterior (maniobras en la
                 // entrada del hotel, en el estacionamiento) no cuenta como inicio.
                 $insideLastStop = $lastClosePoint !== null
-                    && $this->distanceKm($lastClosePoint, $position) <= self::DWELL_RADIUS_KM;
+                    && $this->distanceKm($lastClosePoint, $position) <= self::LEAVE_RADIUS_KM;
 
                 $stillWaiting = !$hasMovedInWindow && $position->speed < self::IDLE_SPEED_KMH;
 
@@ -293,7 +311,7 @@ class TripBuilderService
                 if ($dwellAnchor !== null) {
                     $dwellSeconds = abs($position->device_time->diffInSeconds($dwellAnchor->device_time));
 
-                    if ($dwellSeconds >= $this->dwellEndMinutes * 60) {
+                    if ($dwellSeconds >= $this->dwellMinutesAt($dwellAnchor) * 60) {
                         $closingPoint = $dwellAnchor;
                     }
                 }
@@ -341,6 +359,21 @@ class TripBuilderService
 
         return $seconds >= self::SILENCE_MIN_SECONDS
             && $this->distanceKm($previous, $position) * 1000 <= self::SILENCE_MAX_METERS;
+    }
+
+    /**
+     * Minutos de permanencia para cerrar el viaje en este punto: más junto a un semáforo.
+     */
+    protected function dwellMinutesAt(Position $anchor): int
+    {
+        $nearSignal = $this->signals()->isNear($anchor->latitude, $anchor->longitude, self::SIGNAL_METERS);
+
+        return $nearSignal ? max(self::SIGNAL_DWELL_MINUTES, $this->dwellEndMinutes) : $this->dwellEndMinutes;
+    }
+
+    protected function signals(): SignalIndex
+    {
+        return $this->signalIndex ??= new SignalIndex();
     }
 
     /**

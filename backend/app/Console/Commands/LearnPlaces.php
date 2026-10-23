@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Place;
+use App\Services\SignalIndex;
 use App\Services\ZoneMatchingService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -39,14 +40,25 @@ class LearnPlaces extends Command
     protected const KNOWN_EXTRA_METERS = 50;
     // Distancia máxima para sugerir el nombre de un hotel de OSM
     protected const OSM_NAME_METERS = 300;
+    // Un final de viaje junto a un semáforo no cuenta: un cruce con tráfico se repite todos
+    // los días a la misma hora y DBSCAN lo aprendería como lugar (pasó el 21 y 22 oct)
+    protected const SIGNAL_METERS = 40;
 
-    public function handle(ZoneMatchingService $zones): int
+    public function handle(ZoneMatchingService $zones, SignalIndex $signals): int
     {
         $epsKm = (int) $this->option('eps') / 1000;
         $minVisits = (int) $this->option('min-visits');
         $minDays = (int) $this->option('min-days');
 
-        $points = $this->tripEndPoints();
+        $all = $this->tripEndPoints();
+        $points = array_values(array_filter(
+            $all,
+            fn (array $p) => !$signals->isNear($p['lat'], $p['lng'], self::SIGNAL_METERS)
+        ));
+
+        if (count($all) > count($points)) {
+            $this->line((count($all) - count($points)) . ' finales de viaje junto a un semáforo no se toman en cuenta.');
+        }
 
         if (count($points) < $minVisits) {
             $this->warn('Muy pocos viajes para aprender lugares (' . count($points) . ').');

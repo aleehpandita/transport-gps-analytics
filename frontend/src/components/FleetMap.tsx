@@ -124,6 +124,14 @@ interface FleetMapProps {
 export function FleetMap({ vehicles, zones = [], focus = null }: FleetMapProps) {
   const [initialBaseLayer] = useState(readBaseLayer)
 
+  // Seguir a la unidad elegida: se prende con cada clic en la tabla y se apaga en cuanto
+  // el usuario arrastra el mapa (quiere ver otra cosa) o con el botón "Dejar de seguir".
+  // Se guarda el "at" del clic que lo prendió: un clic nuevo vuelve a seguir sin un efecto.
+  const [followingAt, setFollowingAt] = useState<number | null>(null)
+  const following = focus !== null && followingAt === focus.at
+  const startFollowing = () => focus && setFollowingAt(focus.at)
+  const stopFollowing = () => setFollowingAt(null)
+
   // Solo las unidades con posición; las demás no tienen dónde dibujarse
   const points = vehicles.flatMap((vehicle) =>
     vehicle.latest_position
@@ -134,7 +142,7 @@ export function FleetMap({ vehicles, zones = [], focus = null }: FleetMapProps) 
   const focusTarget = points.find(({ vehicle }) => vehicle.id === focus?.id)
 
   return (
-    <>
+    <div className="relative h-full min-h-[320px] w-full">
       <style>{MAP_CSS}</style>
 
       <MapContainer
@@ -167,6 +175,15 @@ export function FleetMap({ vehicles, zones = [], focus = null }: FleetMapProps) 
           <FlyToVehicle
             at={focus.at}
             point={[focusTarget.position.latitude, focusTarget.position.longitude]}
+            onArrive={() => setFollowingAt(focus.at)}
+          />
+        )}
+
+        {following && focusTarget && (
+          <FollowVehicle
+            lat={focusTarget.position.latitude}
+            lng={focusTarget.position.longitude}
+            onUserMove={stopFollowing}
           />
         )}
 
@@ -189,7 +206,28 @@ export function FleetMap({ vehicles, zones = [], focus = null }: FleetMapProps) 
           </VehicleMarker>
         ))}
       </MapContainer>
-    </>
+
+      {/* Aviso de seguimiento, arriba al centro del mapa */}
+      {focus && focusTarget && (
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-[1000] flex justify-center px-14">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-line bg-surface/95 py-1 pr-1 pl-4 text-sm shadow-lg">
+            <span className="truncate">
+              {following ? 'Siguiendo a ' : ''}
+              <strong>{focusTarget.vehicle.name}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={following ? stopFollowing : startFollowing}
+              className={`rounded-full px-3 py-1 font-medium whitespace-nowrap ${
+                following ? 'bg-surface-raised hover:brightness-125' : 'bg-ok text-black hover:brightness-110'
+              }`}
+            >
+              {following ? 'Dejar de seguir' : 'Seguir'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -291,7 +329,7 @@ function VehicleMarker({ name, lat, lng, course, status, selected, children }: V
   )
 }
 
-// Las zonas de Feraltar: polígonos con borde suave y su nombre en el centro.
+// Las zonas de servicio: polígonos con borde suave y su nombre en el centro.
 // Las zonas por punto (aeropuerto, parques, muelles) se dibujan como círculo con su radio.
 function ZonesLayer({ zones }: { zones: MapZone[] }) {
   return (
@@ -371,7 +409,7 @@ function FitToPoints({ points }: { points: LatLngTuple[] }) {
 
 // Vuela a la unidad elegida en la tabla. Solo se dispara con un clic nuevo ("at"),
 // no cuando la unidad se mueve: así no la persigue ni pelea con el usuario.
-function FlyToVehicle({ at, point }: { at: number; point: LatLngTuple }) {
+function FlyToVehicle({ at, point, onArrive }: { at: number; point: LatLngTuple; onArrive: () => void }) {
   const map = useMap()
   const lastAt = useRef<number | null>(null)
 
@@ -379,7 +417,24 @@ function FlyToVehicle({ at, point }: { at: number; point: LatLngTuple }) {
     if (lastAt.current === at) return
     lastAt.current = at
     map.flyTo(point, Math.max(map.getZoom(), FOCUS_ZOOM), { duration: 0.8 })
-  }, [map, at, point])
+    // Al llegar empieza a seguirla. "once": si el usuario la interrumpe, no se dispara dos veces.
+    map.once('moveend', onArrive)
+  }, [map, at, point, onArrive])
+
+  return null
+}
+
+// Mantiene a la unidad en el centro mientras se mueve. El paneo dura lo mismo que el
+// deslizamiento del ícono (GLIDE_MS), así mapa e ícono avanzan juntos.
+// Si el usuario arrastra el mapa, deja de seguir: quiere ver otra cosa.
+function FollowVehicle({ lat, lng, onUserMove }: { lat: number; lng: number; onUserMove: () => void }) {
+  const map = useMap()
+
+  useMapEvents({ dragstart: onUserMove })
+
+  useEffect(() => {
+    map.panTo([lat, lng], { animate: true, duration: GLIDE_MS / 1000, easeLinearity: 1 })
+  }, [map, lat, lng])
 
   return null
 }
