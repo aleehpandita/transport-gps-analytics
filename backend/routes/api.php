@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\LiveVehicleController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ScheduledServiceController;
@@ -36,6 +37,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/trips', [ReportController::class, 'trips']);
         Route::get('/stops', [ReportController::class, 'stops']);
     });
+
+    Route::get('/events', [EventController::class, 'index']);
 
     Route::get('/zones', [ZoneController::class, 'index']);
 

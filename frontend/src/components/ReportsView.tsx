@@ -8,22 +8,16 @@ import {
   type ReportFilters,
   type ReportKind,
 } from '../lib/apiClient'
-import { cancunDateOf, cancunToday, formatClock, formatDayLabel, formatDuration, shiftDate, startOfMonth } from '../lib/time'
+import { usePeriod } from '../hooks/usePeriod'
+import { loadingFrom, shown, type LoadState } from '../lib/loadState'
+import { cancunDateOf, formatClock, formatDayLabel, formatDuration } from '../lib/time'
 import { tripLabel } from '../lib/tripLabel'
-import type { DailyReportRow, PageMeta, StopsReport, TripsReport, User, Vehicle } from '../types/api'
+import type { DailyReportRow, StopsReport, TripsReport, User, Vehicle } from '../types/api'
 import { NavLinks } from './NavLinks'
+import { Pagination } from './Pagination'
+import { PeriodFilters } from './PeriodFilters'
 
 const SHORT_TRIP_KM = 2
-
-type Preset = 'today' | 'yesterday' | 'week' | 'month' | 'custom'
-
-const PRESETS: { id: Preset; label: string }[] = [
-  { id: 'today', label: 'Hoy' },
-  { id: 'yesterday', label: 'Ayer' },
-  { id: 'week', label: 'Últimos 7 días' },
-  { id: 'month', label: 'Este mes' },
-  { id: 'custom', label: 'Otras fechas' },
-]
 
 const TABS: { id: ReportKind; label: string }[] = [
   { id: 'daily', label: 'Resumen diario' },
@@ -31,56 +25,26 @@ const TABS: { id: ReportKind; label: string }[] = [
   { id: 'stops', label: 'Paradas' },
 ]
 
-function presetRange(preset: Exclude<Preset, 'custom'>, today: string): { from: string; to: string } {
-  switch (preset) {
-    case 'today':
-      return { from: today, to: today }
-    case 'yesterday':
-      return { from: shiftDate(today, -1), to: shiftDate(today, -1) }
-    case 'week':
-      return { from: shiftDate(today, -6), to: today }
-    case 'month':
-      return { from: startOfMonth(today), to: today }
-  }
-}
-
-// Al cambiar de página se conserva lo anterior (atenuado) mientras llega lo nuevo: la tabla no brinca
-type ReportState<T> = { status: 'loading'; last?: T } | { status: 'error'; message: string } | { status: 'ready'; value: T }
-
-function loadingFrom<T>(state: ReportState<T>): ReportState<T> {
-  if (state.status === 'ready') return { status: 'loading', last: state.value }
-  if (state.status === 'loading') return state
-  return { status: 'loading' }
-}
-
-// Lo que se puede dibujar ahora: lo listo, o lo anterior mientras carga
-function shown<T>(state: ReportState<T>): T | undefined {
-  return state.status === 'ready' ? state.value : state.status === 'loading' ? state.last : undefined
-}
-
 interface ReportsViewProps {
   user: User
   onLogout: () => void
 }
 
 export function ReportsView({ user, onLogout }: ReportsViewProps) {
-  const today = cancunToday()
-
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [vehicleId, setVehicleId] = useState<number | null>(null)
-  const [preset, setPreset] = useState<Preset>('week')
-  const [range, setRange] = useState(() => presetRange('week', today))
+  const period = usePeriod('week')
+  const { range } = period
   const [tab, setTab] = useState<ReportKind>('daily')
   const [showShort, setShowShort] = useState(false)
 
-
-  const [daily, setDaily] = useState<ReportState<DailyReportRow[]>>({
+  const [daily, setDaily] = useState<LoadState<DailyReportRow[]>>({
     status: 'loading',
   })
-  const [trips, setTrips] = useState<ReportState<TripsReport>>({
+  const [trips, setTrips] = useState<LoadState<TripsReport>>({
     status: 'loading',
   })
-  const [stops, setStops] = useState<ReportState<StopsReport>>({
+  const [stops, setStops] = useState<LoadState<StopsReport>>({
     status: 'loading',
   })
 
@@ -113,7 +77,7 @@ export function ReportsView({ user, onLogout }: ReportsViewProps) {
     }
 
     const ready =
-      <T,>(set: (s: ReportState<T>) => void) =>
+      <T,>(set: (s: LoadState<T>) => void) =>
       (value: T) => {
         if (!controller.signal.aborted) set({ status: 'ready', value })
       }
@@ -132,13 +96,6 @@ export function ReportsView({ user, onLogout }: ReportsViewProps) {
     return () => controller.abort()
   }, [tab, filters, page, minKm])
 
-  function choosePreset(next: Preset) {
-    setPreset(next)
-    if (next !== 'custom') setRange(presetRange(next, today))
-  }
-
-  const rangeLabel =
-    range.from === range.to ? formatDayLabel(range.from) : `${formatDayLabel(range.from)} al ${formatDayLabel(range.to)}`
   const manyVehicles = vehicleId === null && vehicles.length > 1
 
   function goToPage(next: number) {
@@ -163,67 +120,7 @@ export function ReportsView({ user, onLogout }: ReportsViewProps) {
         </div>
       </header>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-b border-line px-4 py-4 text-sm lg:px-6">
-        <label className="flex flex-col gap-1">
-          <span className="text-ink-muted">Unidad</span>
-          <select
-            value={vehicleId ?? ''}
-            onChange={(e) => setVehicleId(e.target.value === '' ? null : Number(e.target.value))}
-            className="rounded-md border border-line bg-surface-raised px-3 py-1.5"
-          >
-            {vehicles.length > 1 && <option value="">Todas las unidades</option>}
-            {vehicles.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className="flex flex-col gap-1">
-          <span className="text-ink-muted">Periodo</span>
-          <div className="flex flex-wrap gap-1" role="group" aria-label="Periodo">
-            {PRESETS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => choosePreset(p.id)}
-                aria-pressed={preset === p.id}
-                className={`rounded-md px-3 py-1.5 ${preset === p.id ? 'bg-surface-raised font-medium' : 'text-ink-muted hover:bg-surface-raised'}`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {preset === 'custom' && (
-          <div className="flex items-end gap-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-ink-muted">Desde</span>
-              <input
-                type="date"
-                value={range.from}
-                max={range.to}
-                onChange={(e) => e.target.value && setRange((r) => ({ ...r, from: e.target.value }))}
-                className="rounded-md border border-line bg-surface-raised px-3 py-1.5"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-ink-muted">Hasta</span>
-              <input
-                type="date"
-                value={range.to}
-                min={range.from}
-                max={today}
-                onChange={(e) => e.target.value && setRange((r) => ({ ...r, to: e.target.value }))}
-                className="rounded-md border border-line bg-surface-raised px-3 py-1.5"
-              />
-            </label>
-          </div>
-        )}
-      </div>
+      <PeriodFilters vehicles={vehicles} vehicleId={vehicleId} onVehicleChange={setVehicleId} period={period} />
 
       {/* Pestañas y descarga */}
       <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 lg:px-6">
@@ -244,7 +141,7 @@ export function ReportsView({ user, onLogout }: ReportsViewProps) {
           ))}
         </div>
 
-        <span className="text-sm text-ink-muted">{rangeLabel}</span>
+        <span className="text-sm text-ink-muted">{period.label}</span>
 
         <a
           href={reportCsvUrl(tab, filters, tab === 'trips' ? minKm : 0)}
@@ -285,7 +182,7 @@ export function ReportsView({ user, onLogout }: ReportsViewProps) {
 }
 
 // Estados comunes de las tablas: cargando (la primera vez), error o sin datos
-function Status<T>({ state, isEmpty, empty }: { state: ReportState<T>; isEmpty: boolean; empty: string }) {
+function Status<T>({ state, isEmpty, empty }: { state: LoadState<T>; isEmpty: boolean; empty: string }) {
   if (state.status === 'loading' && state.last === undefined) return <p className="py-6 text-sm text-ink-muted">Cargando…</p>
   if (state.status === 'error') {
     return (
@@ -298,61 +195,12 @@ function Status<T>({ state, isEmpty, empty }: { state: ReportState<T>; isEmpty: 
   return null
 }
 
-// "101 a 200 de 742" con Anterior y Siguiente. Solo aparece si hay más de una página.
-function Pagination({
-  meta,
-  busy,
-  noun,
-  onPage,
-}: {
-  meta: PageMeta
-  busy: boolean
-  noun: string
-  onPage: (page: number) => void
-}) {
-  if (meta.last_page <= 1) return null
-
-  const first = (meta.current_page - 1) * meta.per_page + 1
-  const last = Math.min(meta.current_page * meta.per_page, meta.total)
-  const button =
-    'rounded-md border border-line px-3 py-1.5 hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent'
-
-  return (
-    <nav aria-label="Páginas" className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-      <span className="text-ink-muted tabular-nums">
-        {first.toLocaleString('es-MX')} a {last.toLocaleString('es-MX')} de {meta.total.toLocaleString('es-MX')} {noun}
-      </span>
-      <div className="ml-auto flex items-center gap-2">
-        <button
-          type="button"
-          className={button}
-          disabled={busy || meta.current_page <= 1}
-          onClick={() => onPage(meta.current_page - 1)}
-        >
-          Anterior
-        </button>
-        <span className="px-1 text-ink-muted tabular-nums">
-          Página {meta.current_page} de {meta.last_page}
-        </span>
-        <button
-          type="button"
-          className={button}
-          disabled={busy || meta.current_page >= meta.last_page}
-          onClick={() => onPage(meta.current_page + 1)}
-        >
-          Siguiente
-        </button>
-      </div>
-    </nav>
-  )
-}
-
 const th = 'px-3 py-2 text-left font-normal text-ink-muted whitespace-nowrap'
 const thNum = 'px-3 py-2 text-right font-normal text-ink-muted whitespace-nowrap'
 const td = 'px-3 py-2 whitespace-nowrap'
 const tdNum = 'px-3 py-2 text-right tabular-nums whitespace-nowrap'
 
-function DailyTable({ state, manyVehicles }: { state: ReportState<DailyReportRow[]>; manyVehicles: boolean }) {
+function DailyTable({ state, manyVehicles }: { state: LoadState<DailyReportRow[]>; manyVehicles: boolean }) {
   const rows = shown(state)
   if (!rows || rows.length === 0) {
     return <Status state={state} isEmpty empty="No hay viajes en este periodo. Prueba con otras fechas." />
@@ -432,7 +280,7 @@ function TripsTable({
   onShowShortChange,
   onPage,
 }: {
-  state: ReportState<TripsReport>
+  state: LoadState<TripsReport>
   manyVehicles: boolean
   showShort: boolean
   onShowShortChange: (show: boolean) => void
@@ -521,7 +369,7 @@ function StopsTable({
   manyVehicles,
   onPage,
 }: {
-  state: ReportState<StopsReport>
+  state: LoadState<StopsReport>
   manyVehicles: boolean
   onPage: (page: number) => void
 }) {

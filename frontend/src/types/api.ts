@@ -206,3 +206,28 @@ export interface StopReportTotals {
 
 export type TripsReport = ReportPage<TripReportRow, TripReportTotals>
 export type StopsReport = ReportPage<StopReportRow, StopReportTotals>
+
+// GET /api/events: eventos de las unidades, del más reciente al más viejo
+export type VehicleEventType = 'zone_enter' | 'zone_exit' | 'place_visit' | 'overspeed' | 'long_stop' | 'signal_lost'
+
+export interface VehicleEventRow {
+  id: number
+  vehicle_id: number
+  vehicle: string
+  type: VehicleEventType
+  started_at: string // ISO 8601 UTC
+  ended_at: string | null // null: sigue pasando (exceso, parada, sin señal, visita en curso)
+  duration_seconds: number | null
+  latitude: number
+  longitude: number
+  zone: string | null
+  place: string | null
+  value: number | null // velocidad máxima en un exceso
+  data: Record<string, number> | null
+}
+
+export interface EventsPage {
+  data: VehicleEventRow[]
+  meta: PageMeta
+  counts: Partial<Record<VehicleEventType, number>> // del periodo completo, sin el filtro de tipo
+}

@@ -38,10 +38,15 @@ return [
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
-            'synchronous' => null,
-            'transaction_mode' => 'DEFERRED',
+            // El scheduler (sync, viajes, eventos) y el panel escriben al mismo tiempo:
+            // - WAL: se puede leer mientras otro proceso escribe.
+            // - busy_timeout: si la base está ocupada, espera hasta 5 s en lugar de fallar.
+            // - IMMEDIATE: cada transacción aparta la escritura desde el inicio, así no
+            //   choca a medio camino con otra (el "database is locked" del 23 oct).
+            'busy_timeout' => 5000,
+            'journal_mode' => 'wal',
+            'synchronous' => 'normal',
+            'transaction_mode' => 'IMMEDIATE',
         ],
 
         'mysql' => [

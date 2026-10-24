@@ -1,6 +1,6 @@
-// Navegación entre las tres páginas del panel. La página actual se marca y no es enlace.
+// Navegación entre las páginas del panel. La página actual se marca y no es enlace.
 
-export type Page = 'live' | 'history' | 'reports'
+export type Page = 'live' | 'history' | 'reports' | 'events'
 
 const LINKS: { page: Page; href: string; label: string; icon: string }[] = [
   {
@@ -24,6 +24,13 @@ const LINKS: { page: Page; href: string; label: string; icon: string }[] = [
     // Hoja con barras
     icon: 'M4 20V10 M10 20V4 M16 20v-7 M22 20H2',
   },
+  {
+    page: 'events',
+    href: '#/eventos',
+    label: 'Eventos',
+    // Campana
+    icon: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10.3 21a1.9 1.9 0 0 0 3.4 0',
+  },
 ]
 
 export function NavLinks({ current }: { current: Page }) {
@@ -32,7 +39,17 @@ export function NavLinks({ current }: { current: Page }) {
       {LINKS.map((link) => {
         const active = link.page === current
         const icon = (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <path d={link.icon} />
           </svg>
         )

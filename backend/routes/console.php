@@ -21,6 +21,9 @@ Artisan::command('inspire', function () {
 |   posiciones por llegar se corrige solo en las corridas siguientes.
 | - No se programa trips:assign-zones: closeTrip() ya resuelve las zonas al
 |   crear o actualizar cada viaje.
+| - Eventos cada minuto: solo lee las posiciones nuevas de cada unidad, así que
+|   es barato; cada minuto también revisa lo que depende del reloj (sin señal,
+|   parada larga sin posiciones nuevas). Umbrales en config/alerts.php.
 */
 
 Schedule::command('traccar:sync-positions')
@@ -30,5 +33,10 @@ Schedule::command('traccar:sync-positions')
 
 Schedule::command('trips:build')
     ->everyTenMinutes()
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+Schedule::command('events:detect')
+    ->everyMinute()
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/scheduler.log'));

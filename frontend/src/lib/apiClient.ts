@@ -1,6 +1,8 @@
 import type {
   Collection,
   DailyReportRow,
+  EventsPage,
+  VehicleEventType,
   StopsReport,
   TripsReport,
   LivePosition,
@@ -99,8 +101,7 @@ export const logout = () => postJson<{ message: string }>('/logout')
 export const fetchMe = (signal?: AbortSignal) => getJson<{ data: User }>('/me', signal).then((r) => r.data)
 
 // Fetchers estables (nivel de módulo) para usarlos con usePolling sin re-crear el efecto
-export const fetchVehicles = (signal: AbortSignal) =>
-  getJson<Collection<Vehicle>>('/vehicles', signal).then((r) => r.data)
+export const fetchVehicles = (signal: AbortSignal) => getJson<Collection<Vehicle>>('/vehicles', signal).then((r) => r.data)
 
 // Posición en vivo de cada unidad, directo de Traccar (sin pasar por la base). Solo para el mapa.
 export const fetchLiveVehicles = (signal: AbortSignal) =>
@@ -117,20 +118,15 @@ export const fetchScheduledServices = (signal: AbortSignal) => {
     per_page: String(UPCOMING_LIMIT),
   })
 
-  return getJson<Paginated<ScheduledService>>(`/scheduled-services?${params}`, signal).then(
-    (r) => r.data,
-  )
+  return getJson<Paginated<ScheduledService>>(`/scheduled-services?${params}`, signal).then((r) => r.data)
 }
 
 // Zonas activas con su geometría, para dibujarlas en el mapa
-export const fetchZones = (signal: AbortSignal) =>
-  getJson<Collection<MapZone>>('/zones', signal).then((r) => r.data)
+export const fetchZones = (signal: AbortSignal) => getJson<Collection<MapZone>>('/zones', signal).then((r) => r.data)
 
 // Recorrido completo de una unidad en un día de Cancún (YYYY-MM-DD), para el historial
 export const fetchVehicleRoute = (vehicleId: number, date: string, signal?: AbortSignal) =>
-  getJson<{ data: RouteDay }>(`/vehicles/${vehicleId}/route?date=${encodeURIComponent(date)}`, signal).then(
-    (r) => r.data,
-  )
+  getJson<{ data: RouteDay }>(`/vehicles/${vehicleId}/route?date=${encodeURIComponent(date)}`, signal).then((r) => r.data)
 
 // Reportes por rango de fechas de Cancún (YYYY-MM-DD). vehicleId null = todas las unidades.
 export interface ReportFilters {
@@ -170,6 +166,16 @@ export const fetchStopsReport = (filters: ReportFilters, options: ReportPageOpti
 export const reportCsvUrl = (kind: ReportKind, filters: ReportFilters, minKm = 0) =>
   `/api${reportPath(kind, filters, { minKm }, 'csv')}`
 
+// Eventos por periodo. type null = todos; 'alerts' = exceso, parada larga y sin señal.
+export type EventFilter = VehicleEventType | 'alerts' | null
+
+export function fetchEvents(filters: ReportFilters, type: EventFilter, page: number, signal?: AbortSignal) {
+  const params = new URLSearchParams({ from: filters.from, to: filters.to })
+  if (filters.vehicleId !== null) params.set('vehicle_id', String(filters.vehicleId))
+  if (type) params.set('type', type)
+  if (page > 1) params.set('page', String(page))
+  return getJson<EventsPage>(`/events?${params}`, signal)
+}
+
 // Viajes de hoy de las unidades del usuario. El backend corta el día en hora Cancún.
-export const fetchTodayTrips = (signal: AbortSignal) =>
-  getJson<Collection<Trip>>('/trips', signal).then((r) => r.data)
+export const fetchTodayTrips = (signal: AbortSignal) => getJson<Collection<Trip>>('/trips', signal).then((r) => r.data)
