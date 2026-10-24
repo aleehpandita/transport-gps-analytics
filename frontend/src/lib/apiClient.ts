@@ -1,5 +1,8 @@
 import type {
   Collection,
+  DailyReportRow,
+  StopsReport,
+  TripsReport,
   LivePosition,
   MapZone,
   Paginated,
@@ -128,6 +131,44 @@ export const fetchVehicleRoute = (vehicleId: number, date: string, signal?: Abor
   getJson<{ data: RouteDay }>(`/vehicles/${vehicleId}/route?date=${encodeURIComponent(date)}`, signal).then(
     (r) => r.data,
   )
+
+// Reportes por rango de fechas de Cancún (YYYY-MM-DD). vehicleId null = todas las unidades.
+export interface ReportFilters {
+  from: string
+  to: string
+  vehicleId: number | null
+}
+
+export type ReportKind = 'daily' | 'trips' | 'stops'
+
+// Página y filtro de km mínimos; solo aplican a viajes y paradas
+export interface ReportPageOptions {
+  page?: number
+  minKm?: number
+}
+
+function reportPath(kind: ReportKind, filters: ReportFilters, options: ReportPageOptions = {}, format?: 'csv'): string {
+  const params = new URLSearchParams({ from: filters.from, to: filters.to })
+  if (filters.vehicleId !== null) params.set('vehicle_id', String(filters.vehicleId))
+  if (options.page && options.page > 1) params.set('page', String(options.page))
+  if (options.minKm && options.minKm > 0) params.set('min_km', String(options.minKm))
+  if (format) params.set('format', format)
+  return `/reports/${kind}?${params}`
+}
+
+export const fetchDailyReport = (filters: ReportFilters, signal?: AbortSignal) =>
+  getJson<Collection<DailyReportRow>>(reportPath('daily', filters), signal).then((r) => r.data)
+
+export const fetchTripsReport = (filters: ReportFilters, options: ReportPageOptions, signal?: AbortSignal) =>
+  getJson<TripsReport>(reportPath('trips', filters, options), signal)
+
+export const fetchStopsReport = (filters: ReportFilters, options: ReportPageOptions, signal?: AbortSignal) =>
+  getJson<StopsReport>(reportPath('stops', filters, options), signal)
+
+// Dirección de descarga del CSV: un enlace normal, la cookie de sesión viaja sola.
+// El CSV trae todo el periodo, sin paginar; solo respeta el filtro de km.
+export const reportCsvUrl = (kind: ReportKind, filters: ReportFilters, minKm = 0) =>
+  `/api${reportPath(kind, filters, { minKm }, 'csv')}`
 
 // Viajes de hoy de las unidades del usuario. El backend corta el día en hora Cancún.
 export const fetchTodayTrips = (signal: AbortSignal) =>

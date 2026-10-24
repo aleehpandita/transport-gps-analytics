@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\LiveVehicleController;
+use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ScheduledServiceController;
 use App\Http\Controllers\Api\TripController;
 use App\Http\Controllers\Api\VehicleController;
@@ -29,6 +30,12 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::get('/trips', [TripController::class, 'index']);
+
+    Route::prefix('reports')->group(function () {
+        Route::get('/daily', [ReportController::class, 'daily']);
+        Route::get('/trips', [ReportController::class, 'trips']);
+        Route::get('/stops', [ReportController::class, 'stops']);
+    });
 
     Route::get('/zones', [ZoneController::class, 'index']);
 

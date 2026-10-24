@@ -136,3 +136,73 @@ export interface RouteDay {
   points: RoutePoint[]
   trips: RouteTrip[]
 }
+
+// GET /api/reports/*: reportes por rango de fechas (horas en ISO 8601 UTC, fechas de Cancún)
+export interface DailyReportRow {
+  vehicle_id: number
+  vehicle: string
+  date: string // YYYY-MM-DD
+  trips: number // sin contar movimientos de menos de 2 km
+  km: number
+  driving_seconds: number
+  first_start: string
+  last_end: string
+  workday_seconds: number // de la primera salida a la última llegada
+  stops: number
+  stopped_seconds: number
+  max_speed: number
+}
+
+export interface TripReportRow {
+  id: number
+  vehicle_id: number
+  vehicle: string
+  started_at: string
+  ended_at: string
+  duration_seconds: number
+  distance_km: number
+  max_speed: number | null
+  origin_zone: string | null
+  destination_zone: string | null
+  origin_place: string | null
+  destination_place: string | null
+}
+
+export interface StopReportRow {
+  vehicle_id: number
+  vehicle: string
+  started_at: string
+  ended_at: string
+  duration_seconds: number
+  place: string | null
+  zone: string | null
+}
+
+// Viajes y paradas vienen paginados, con los totales de TODO el periodo (no de la página)
+export interface PageMeta {
+  current_page: number
+  last_page: number
+  per_page: number
+  total: number
+}
+
+export interface ReportPage<T, Totals> {
+  data: T[]
+  meta: PageMeta
+  totals: Totals
+}
+
+export interface TripReportTotals {
+  trips: number
+  km: number
+  duration_seconds: number
+  short_trips: number // movimientos de menos de 2 km en el periodo, se muestren o no
+}
+
+export interface StopReportTotals {
+  stops: number
+  duration_seconds: number
+}
+
+export type TripsReport = ReportPage<TripReportRow, TripReportTotals>
+export type StopsReport = ReportPage<StopReportRow, StopReportTotals>

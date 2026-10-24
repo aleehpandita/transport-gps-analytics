@@ -5,6 +5,7 @@ import { cancunToday, formatClock, formatDayLabel, formatDuration, shiftDate, to
 import { tripLabel } from '../lib/tripLabel'
 import type { RouteDay, RoutePoint, User, Vehicle } from '../types/api'
 import { DayTimeline } from './DayTimeline'
+import { NavLinks } from './NavLinks'
 import { RouteMap, SPEED_BANDS } from './RouteMap'
 
 // Movimientos cortos (acomodarse en el estacionamiento del aeropuerto, por ejemplo):
@@ -176,23 +177,13 @@ export function HistoryView({ user, initialVehicleId, initialDate, onLogout }: H
           </button>
         </div>
 
-        <nav className="ml-auto flex items-center gap-3 text-sm text-ink-muted">
-          <a
-            href="#/"
-            className="inline-flex items-center gap-2 rounded-md border border-ok/50 bg-ok/15 px-3 py-1.5 font-medium text-ok transition-colors hover:bg-ok/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ok"
-          >
-            {/* Pin de ubicación: volver a ver dónde están ahora */}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z" />
-              <circle cx="12" cy="9.5" r="2.5" />
-            </svg>
-            Mapa en vivo
-          </a>
+        <div className="ml-auto flex flex-wrap items-center gap-3 text-sm text-ink-muted">
+          <NavLinks current="history" />
           <span>{user.name}</span>
           <button type="button" onClick={onLogout} className="rounded-md border border-line px-3 py-1 hover:bg-surface-raised">
             Salir
           </button>
-        </nav>
+        </div>
       </header>
 
       <div className="grid flex-1 lg:min-h-0 lg:grid-cols-[340px_minmax(0,1fr)]">

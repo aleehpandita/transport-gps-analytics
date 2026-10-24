@@ -63,3 +63,13 @@ export function formatDuration(seconds: number): string {
 export function toTimestamp(iso: string): number {
   return Math.floor(new Date(iso).getTime() / 1000)
 }
+
+// Fecha de Cancún (YYYY-MM-DD) de un momento ISO
+export function cancunDateOf(iso: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: CANCUN }).format(new Date(iso))
+}
+
+// Primer día del mes de una fecha YYYY-MM-DD
+export function startOfMonth(date: string): string {
+  return `${date.slice(0, 8)}01`
+}
