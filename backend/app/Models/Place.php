@@ -7,7 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Place extends Model
 {
-    public const TYPES = ['airport_terminal', 'hotel', 'other'];
+    // base: donde se guarda la unidad (no es parada larga y sus viajes siempre van vacíos)
+    public const TYPES = ['airport_terminal', 'hotel', 'base', 'other'];
 
     // De dónde viene el lugar (ver la migración add_source_to_places_table)
     public const SOURCE_MANUAL = 'manual';

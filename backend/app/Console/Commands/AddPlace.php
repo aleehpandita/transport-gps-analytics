@@ -21,7 +21,7 @@ class AddPlace extends Command
     protected $signature = 'places:add
         {name : Nombre del lugar, por ejemplo "Valentin Imperial Maya lobby"}
         {coordinates : "latitud, longitud" entre comillas, como se copian de Google Maps}
-        {--type=hotel : airport_terminal, hotel u other}
+        {--type=hotel : airport_terminal, hotel, base u other}
         {--radius=100 : Radio en metros}
         {--notes= : Nota opcional}';
 

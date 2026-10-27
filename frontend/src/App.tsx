@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Dashboard } from './components/Dashboard'
+import { EventsView } from './components/EventsView'
 import { HistoryView } from './components/HistoryView'
 import { LoginScreen } from './components/LoginScreen'
+import { OperationsView } from './components/OperationsView'
 import { ReportsView } from './components/ReportsView'
 import { AUTH_EXPIRED_EVENT, fetchMe, logout } from './lib/apiClient'
 import type { User } from './types/api'
@@ -11,16 +13,20 @@ type AuthState =
   | { status: 'guest' }
   | { status: 'authenticated'; user: User }
 
-// Rutas por hash, sin librería: #/ es el mapa en vivo, #/historial/2/2026-10-21 el historial
-// y #/reportes los reportes.
+// Rutas por hash, sin librería: #/ es el mapa en vivo, #/historial/2/2026-10-21 el historial,
+// #/operacion la operación del día, #/reportes los reportes y #/eventos los eventos y alertas.
 // Con hash, Nginx no necesita configuración extra para que funcione recargar la página.
 type Route =
   | { page: 'live' }
+  | { page: 'operation' }
   | { page: 'reports' }
+  | { page: 'events' }
   | { page: 'history'; vehicleId: number | null; date: string | null }
 
 function parseHash(hash: string): Route {
   if (hash.startsWith('#/reportes')) return { page: 'reports' }
+  if (hash.startsWith('#/eventos')) return { page: 'events' }
+  if (hash.startsWith('#/operacion')) return { page: 'operation' }
   const match = hash.match(/^#\/historial(?:\/(\d+))?(?:\/(\d{4}-\d{2}-\d{2}))?/)
   if (!match) return { page: 'live' }
   return { page: 'history', vehicleId: match[1] ? Number(match[1]) : null, date: match[2] ?? null }
@@ -38,7 +44,7 @@ function useHashRoute(): Route {
   return route
 }
 
-// Decide qué se muestra: el login, el mapa en vivo o el historial
+// Decide qué se muestra: el login o la página de la ruta
 export default function App() {
   const [auth, setAuth] = useState<AuthState>({ status: 'checking' })
   const route = useHashRoute()
@@ -78,6 +84,14 @@ export default function App() {
 
   if (auth.status === 'guest') {
     return <LoginScreen onLoggedIn={(user) => setAuth({ status: 'authenticated', user })} />
+  }
+
+  if (route.page === 'operation') {
+    return <OperationsView user={auth.user} onLogout={handleLogout} />
+  }
+
+  if (route.page === 'events') {
+    return <EventsView user={auth.user} onLogout={handleLogout} />
   }
 
   if (route.page === 'reports') {

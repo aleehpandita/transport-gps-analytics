@@ -2,6 +2,9 @@ import type {
   Collection,
   DailyReportRow,
   EventsPage,
+  OperationDay,
+  ReviewStatus,
+  TripReview,
   VehicleEventType,
   StopsReport,
   TripsReport,
@@ -176,6 +179,21 @@ export function fetchEvents(filters: ReportFilters, type: EventFilter, page: num
   if (page > 1) params.set('page', String(page))
   return getJson<EventsPage>(`/events?${params}`, signal)
 }
+
+// Operación de un día de Cancún (YYYY-MM-DD) armada con GPS. vehicleId null = todas.
+export function fetchOperation(date: string, vehicleId: number | null, signal?: AbortSignal) {
+  const params = new URLSearchParams({ date })
+  if (vehicleId !== null) params.set('vehicle_id', String(vehicleId))
+  return getJson<{ data: OperationDay }>(`/operations?${params}`, signal).then((r) => r.data)
+}
+
+// Confirmar qué fue un viaje. 'clear' borra la confirmación y vuelve a lo que diga el GPS.
+export const reviewTrip = (tripId: number, status: ReviewStatus | 'clear', note: string | null) =>
+  postJson<{ data: TripReview | null }>('/trip-reviews', { trip_id: tripId, status, note }).then((r) => r.data)
+
+// Alta de un lugar desde el panel (solo administradores)
+export const createPlace = (place: { name: string; latitude: number; longitude: number; type?: string; radius_m?: number }) =>
+  postJson<{ data: { id: number; name: string; type: string; zone: string | null } }>('/places', place).then((r) => r.data)
 
 // Viajes de hoy de las unidades del usuario. El backend corta el día en hora Cancún.
 export const fetchTodayTrips = (signal: AbortSignal) => getJson<Collection<Trip>>('/trips', signal).then((r) => r.data)

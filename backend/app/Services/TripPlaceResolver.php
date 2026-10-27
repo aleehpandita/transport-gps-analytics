@@ -9,7 +9,8 @@ use Illuminate\Support\Collection;
 
 /**
  * Pone nombre de lugar al inicio y al fin de cada viaje: "Valentin Imperial Maya lobby",
- * "Aeropuerto T3 salidas". Lo usan la lista de viajes de hoy, el historial y los reportes.
+ * "Aeropuerto T3 salidas". Lo usan la lista de viajes de hoy, el historial, los reportes y
+ * la operación automática.
  *
  * Consulta para todos los viajes juntos (posiciones, lugares y viajes anteriores), no por
  * viaje, y en bloques: SQLite tiene un límite de variables por consulta, y un reporte de dos
@@ -36,6 +37,25 @@ class TripPlaceResolver
      */
     public function resolve(Collection $trips): array
     {
+        return array_map(fn (array $ends) => [
+            'origin_place' => $ends['origin']['name'],
+            'destination_place' => $ends['destination']['name'],
+        ], $this->ends($trips));
+    }
+
+    /**
+     * Inicio y fin de cada viaje con el lugar donde cayeron (si cayeron en uno) y el punto
+     * exacto. Lo usa la operación automática, que necesita el tipo de lugar (terminal,
+     * hotel, base) y las coordenadas de los puntos sin nombre.
+     *
+     * @param Collection<int, Trip> $trips
+     * @return array<int, array{
+     *   origin: array{lat: ?float, lng: ?float, name: ?string, type: ?string, place_id: ?int},
+     *   destination: array{lat: ?float, lng: ?float, name: ?string, type: ?string, place_id: ?int}
+     * }> por id de viaje
+     */
+    public function ends(Collection $trips): array
+    {
         if ($trips->isEmpty()) {
             return [];
         }
@@ -44,7 +64,7 @@ class TripPlaceResolver
             $trips->flatMap(fn (Trip $t) => [[$t->vehicle_id, $t->started_at], [$t->vehicle_id, $t->ended_at]])
         );
 
-        $places = $this->places ??= Place::where('is_active', true)->get(['name', 'latitude', 'longitude', 'radius_m']);
+        $places = $this->places();
 
         // El viaje anterior de cada uno, aunque no venga en la lista (el primero del día, por ejemplo)
         $previous = $this->previousTrips($trips);
@@ -56,27 +76,73 @@ class TripPlaceResolver
             $start = $positions->get($this->key($trip->vehicle_id, $trip->started_at));
             $end = $positions->get($this->key($trip->vehicle_id, $trip->ended_at));
 
-            $origin = $start ? $this->placeNameAt($places, (float) $start->latitude, (float) $start->longitude) : null;
+            $origin = $this->point($places, $start);
 
             // Sin lugar al inicio: si arrancó cerca de donde terminó el viaje anterior, viene de ahí
             $before = $previous->get($trip->id);
             $beforeEnd = $before ? $previousEnds->get($this->key($before->vehicle_id, $before->ended_at)) : null;
 
-            if ($origin === null && $start && $beforeEnd) {
+            if ($origin['name'] === null && $start && $beforeEnd) {
                 $gap = $this->meters((float) $start->latitude, (float) $start->longitude, (float) $beforeEnd->latitude, (float) $beforeEnd->longitude);
 
                 if ($gap <= self::ORIGIN_FROM_PREVIOUS_METERS) {
-                    $origin = $this->placeNameAt($places, (float) $beforeEnd->latitude, (float) $beforeEnd->longitude);
+                    $origin = $this->point($places, $beforeEnd);
                 }
             }
 
             $result[$trip->id] = [
-                'origin_place' => $origin,
-                'destination_place' => $end ? $this->placeNameAt($places, (float) $end->latitude, (float) $end->longitude) : null,
+                'origin' => $origin,
+                'destination' => $this->point($places, $end),
             ];
         }
 
         return $result;
+    }
+
+    /**
+     * @return Collection<int, Place>
+     */
+    public function places(): Collection
+    {
+        return $this->places ??= Place::where('is_active', true)->get(['id', 'name', 'type', 'latitude', 'longitude', 'radius_m']);
+    }
+
+    /**
+     * @param Collection<int, Place> $places
+     */
+    protected function point(Collection $places, ?Position $position): array
+    {
+        if (!$position) {
+            return ['lat' => null, 'lng' => null, 'name' => null, 'type' => null, 'place_id' => null];
+        }
+
+        $lat = (float) $position->latitude;
+        $lng = (float) $position->longitude;
+        $place = $this->placeAt($places, $lat, $lng);
+
+        return ['lat' => $lat, 'lng' => $lng, 'name' => $place?->name, 'type' => $place?->type, 'place_id' => $place?->id];
+    }
+
+    /**
+     * Lugar activo más cercano que contiene el punto, o null.
+     *
+     * @param Collection<int, Place> $places
+     */
+    public function placeAt(Collection $places, float $lat, float $lng): ?Place
+    {
+        $best = null;
+        $bestMeters = INF;
+
+        foreach ($places as $place) {
+            $meters = $this->meters($lat, $lng, $place->latitude, $place->longitude);
+
+            if ($meters <= $place->radius_m && $meters < $bestMeters) {
+                $best = $place;
+                $bestMeters = $meters;
+            }
+        }
+
+        return $best;
     }
 
     /**
@@ -86,19 +152,7 @@ class TripPlaceResolver
      */
     public function placeNameAt(Collection $places, float $lat, float $lng): ?string
     {
-        $best = null;
-        $bestMeters = INF;
-
-        foreach ($places as $place) {
-            $meters = $this->meters($lat, $lng, $place->latitude, $place->longitude);
-
-            if ($meters <= $place->radius_m && $meters < $bestMeters) {
-                $best = $place->name;
-                $bestMeters = $meters;
-            }
-        }
-
-        return $best;
+        return $this->placeAt($places, $lat, $lng)?->name;
     }
 
     /**

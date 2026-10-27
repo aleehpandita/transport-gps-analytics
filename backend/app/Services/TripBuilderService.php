@@ -72,6 +72,47 @@ class TripBuilderService
     protected const PLACE_MIN_TRIP_KM = 0.3;
 
     /**
+     * Regla 4 (vuelta): bajadas rápidas en hoteles que no están en el catálogo.
+     *
+     * Medido el 25 oct: Grand Oasis (2 min) y Dreams Sands (3.5 min) no cerraron el viaje
+     * porque duraron menos que la regla de permanencia y el hotel no estaba dado de alta.
+     * Lo que las distingue de un semáforo es lo que pasa después: en un semáforo la unidad
+     * sigue derecho; después de una bajada da la vuelta y regresa por donde vino (llegó
+     * por el bulevar hacia el norte y se fue hacia el sur).
+     *
+     * Se aplica al cerrar cada viaje: si adentro hay una parada de TURN_STOP_SECONDS o más,
+     * en menos de TURN_RADIUS_M, y el rumbo de salida gira TURN_MIN_DEGREES o más contra el
+     * de llegada, el viaje se parte ahí. Probado con los viajes reales del 19 al 25 oct: de
+     * 92 paradas de 30 s o más dentro de viajes, solo 3 cumplen las condiciones (las 2 bajadas
+     * del 25 y una del 19 junto al Iberostar); ninguna en semáforos ni en filas de tráfico.
+     */
+    protected const TURN_STOP_SECONDS = 60;
+    protected const TURN_RADIUS_M = 40;
+    protected const TURN_SLOW_KMH = 12;
+    protected const TURN_MIN_DEGREES = 120;
+    // Distancia a la que se mide el rumbo de llegada y de salida
+    protected const TURN_BEARING_METERS = 200;
+    // Lejos del inicio y del fin del viaje, que ya resuelven las otras reglas
+    protected const TURN_EDGE_KM = 0.3;
+    // Cerca del aeropuerto las vueltas son maniobras entre terminales, no bajadas
+    protected const TURN_AIRPORT_METERS = 1500;
+
+    /**
+     * Regla 5 (junto a un hotel): bajadas y recogidas en las que la unidad sigue de largo,
+     * sin dar la vuelta. Medido el 25 y 26 oct: Cancun Bay (73 s) y Fiesta Americana Villas
+     * (67 s), las dos a menos de 120 m de un hotel. Basta una parada más corta, pero solo
+     * junto a un hotel (del catálogo o candidato de OpenStreetMap) y lejos de semáforos con
+     * un margen más amplio: en el centro hay hoteles junto a cruces con fila (Soberanis,
+     * 25 oct, a 70 m de un semáforo).
+     */
+    protected const HOTEL_STOP_SECONDS = 45;
+    protected const HOTEL_STOP_METERS = 120;
+    protected const HOTEL_STOP_SIGNAL_METERS = 80;
+
+    // Dos paradas así de cerca son la misma (maniobras en la entrada del hotel)
+    protected const INNER_STOP_MERGE_METERS = 150;
+
+    /**
      * Segundos de movimiento sostenido requeridos para confirmar inicio de viaje.
      */
     protected int $startConfirmationSeconds;
@@ -99,6 +140,9 @@ class TripBuilderService
 
     /** @var Collection<int, Place>|null Lugares activos, se cargan una vez por instancia */
     protected ?Collection $places = null;
+
+    /** @var Collection<int, Place>|null Hoteles del catálogo y candidatos de OpenStreetMap */
+    protected ?Collection $hotels = null;
 
     public function __construct(
         int $startConfirmationSeconds = 30,
@@ -156,6 +200,11 @@ class TripBuilderService
      *   - Regla 3 (lugar de servicio): dentro del radio de un lugar del catálogo (places),
      *     a menos de PLACE_SLOW_KMH por PLACE_STOP_SECONDS. Atrapa las bajadas y recogidas
      *     rápidas, que duran lo mismo que un semáforo.
+     *
+     *   - Regla 4 (vuelta): al cerrar, el viaje se parte donde la unidad se detuvo y dio la
+     *     vuelta. Atrapa bajadas rápidas en hoteles que todavía no están en el catálogo.
+     *   - Regla 5 (junto a un hotel): también se parte en una parada corta junto a un hotel,
+     *     del catálogo o de OpenStreetMap, aunque siga de largo.
      *
      * Las reglas 2 y 3 cuentan los silencios (huecos sin posiciones con la unidad en el
      * mismo lugar) como tiempo detenida.
@@ -318,7 +367,7 @@ class TripBuilderService
             }
 
             if ($closingPoint !== null) {
-                $trips->push($this->closeTrip($vehicle, $tripPositions, $closingPoint));
+                $this->closeWithTurnarounds($vehicle, $tripPositions, $closingPoint, $trips);
                 $lastClosePoint = $closingPoint;
 
                 // Reiniciar estado para buscar el siguiente viaje
@@ -343,10 +392,193 @@ class TripBuilderService
         if ($tripStart !== null && !empty($tripPositions)) {
             $lastPosition = end($tripPositions);
             $closingPoint = $endCandidate ?? $lastPosition;
-            $trips->push($this->closeTrip($vehicle, $tripPositions, $closingPoint));
+            $this->closeWithTurnarounds($vehicle, $tripPositions, $closingPoint, $trips);
         }
 
         return $trips;
+    }
+
+    /**
+     * Cierra el viaje partiéndolo en cada bajada o recogida que encuentren las reglas 4 y 5.
+     * Si no hay ninguna, es un solo viaje.
+     *
+     * @param Position[] $positions
+     */
+    protected function closeWithTurnarounds(Vehicle $vehicle, array $positions, Position $closingPoint, Collection $trips): void
+    {
+        $positions = array_values(array_filter(
+            $positions,
+            fn (Position $p) => $p->device_time->lte($closingPoint->device_time)
+        ));
+
+        $from = 0;
+        foreach ($this->findInnerStops($positions) as [$stopStart, $stopEnd]) {
+            $segment = array_slice($positions, $from, $stopStart - $from + 1);
+            if (count($segment) >= 2) {
+                $trips->push($this->closeTrip($vehicle, $segment, end($segment)));
+            }
+            // El siguiente tramo arranca cuando se va de la parada
+            $from = $stopEnd;
+        }
+
+        $segment = array_slice($positions, $from);
+        if (count($segment) >= 2) {
+            $trips->push($this->closeTrip($vehicle, $segment, end($segment)));
+        }
+    }
+
+    /**
+     * Paradas dentro del viaje que fueron bajadas o recogidas: [índice donde se detuvo,
+     * índice donde se fue], en orden. Regla 4: dio la vuelta. Regla 5: junto a un hotel.
+     *
+     * @param Position[] $positions
+     * @return list<array{0: int, 1: int}>
+     */
+    protected function findInnerStops(array $positions): array
+    {
+        $n = count($positions);
+        if ($n < 3) {
+            return [];
+        }
+
+        $first = $positions[0];
+        $last = $positions[$n - 1];
+        $found = [];
+
+        for ($i = 0; $i < $n; $i++) {
+            $anchor = $positions[$i];
+            if ($anchor->speed >= self::TURN_SLOW_KMH) {
+                continue;
+            }
+
+            // Hasta dónde sigue detenida (o casi) en el mismo punto
+            $j = $i;
+            while ($j + 1 < $n
+                && $positions[$j + 1]->speed < self::TURN_SLOW_KMH
+                && $this->distanceKm($anchor, $positions[$j + 1]) * 1000 <= self::TURN_RADIUS_M) {
+                $j++;
+            }
+
+            $seconds = abs($positions[$j]->device_time->diffInSeconds($anchor->device_time));
+            $start = $i;
+            $i = $j;
+
+            if ($seconds < self::HOTEL_STOP_SECONDS
+                || $this->distanceKm($anchor, $first) < self::TURN_EDGE_KM
+                || $this->distanceKm($anchor, $last) < self::TURN_EDGE_KM
+                || $this->nearAirport($anchor)) {
+                continue;
+            }
+
+            $isStop = ($seconds >= self::TURN_STOP_SECONDS && $this->turnedAround($positions, $start, $j))
+                || ($this->nearHotel($anchor) && !$this->signals()->isNear($anchor->latitude, $anchor->longitude, self::HOTEL_STOP_SIGNAL_METERS));
+
+            if (!$isStop || $this->signals()->isNear($anchor->latitude, $anchor->longitude, self::SIGNAL_METERS)) {
+                continue;
+            }
+
+            // Pegada a la anterior: es la misma parada (entró, se acomodó, bajó gente)
+            $previous = end($found);
+            if ($previous && $this->distanceKm($positions[$previous[0]], $anchor) * 1000 <= self::INNER_STOP_MERGE_METERS) {
+                $found[count($found) - 1][1] = $j;
+                continue;
+            }
+
+            $found[] = [$start, $j];
+        }
+
+        return $found;
+    }
+
+    /**
+     * true si el rumbo de salida (parada → 200 m después) gira TURN_MIN_DEGREES o más contra
+     * el de llegada (200 m antes → parada).
+     *
+     * @param Position[] $positions
+     */
+    protected function turnedAround(array $positions, int $start, int $end): bool
+    {
+        $n = count($positions);
+        $anchor = $positions[$start];
+
+        $before = $start;
+        while ($before > 0 && $this->distanceKm($positions[$before], $anchor) * 1000 < self::TURN_BEARING_METERS) {
+            $before--;
+        }
+        $after = $end;
+        while ($after < $n - 1 && $this->distanceKm($positions[$after], $positions[$end]) * 1000 < self::TURN_BEARING_METERS) {
+            $after++;
+        }
+
+        if ($before === $start || $after === $end) {
+            return false;
+        }
+
+        $turn = $this->angleBetween(
+            $this->bearing($positions[$before], $anchor),
+            $this->bearing($positions[$end], $positions[$after])
+        );
+
+        return $turn >= self::TURN_MIN_DEGREES;
+    }
+
+    protected function nearHotel(Position $position): bool
+    {
+        foreach ($this->hotels() as $hotel) {
+            if ($this->haversineKm($position->latitude, $position->longitude, $hotel->latitude, $hotel->longitude) * 1000 <= self::HOTEL_STOP_METERS) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Hoteles del catálogo y los candidatos de OpenStreetMap (inactivos): un hotel nuevo
+     * casi siempre ya está en el mapa aunque no lo hayamos dado de alta.
+     *
+     * @return Collection<int, Place>
+     */
+    protected function hotels(): Collection
+    {
+        return $this->hotels ??= Place::where('type', 'hotel')->get(['id', 'latitude', 'longitude']);
+    }
+
+    protected function nearAirport(Position $position): bool
+    {
+        foreach ($this->activePlaces() as $place) {
+            if ($place->type === 'airport_terminal'
+                && $this->haversineKm($position->latitude, $position->longitude, $place->latitude, $place->longitude) * 1000 <= self::TURN_AIRPORT_METERS) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Rumbo de $a hacia $b en grados (0 = norte, 90 = este).
+     */
+    protected function bearing(Position $a, Position $b): float
+    {
+        $lat1 = deg2rad($a->latitude);
+        $lat2 = deg2rad($b->latitude);
+        $dLng = deg2rad($b->longitude - $a->longitude);
+
+        $y = sin($dLng) * cos($lat2);
+        $x = cos($lat1) * sin($lat2) - sin($lat1) * cos($lat2) * cos($dLng);
+
+        return fmod(rad2deg(atan2($y, $x)) + 360, 360);
+    }
+
+    /**
+     * Cuánto giró entre dos rumbos, de 0 (sigue derecho) a 180 (da la vuelta).
+     */
+    protected function angleBetween(float $a, float $b): float
+    {
+        $diff = abs($a - $b);
+
+        return $diff > 180 ? 360 - $diff : $diff;
     }
 
     /**

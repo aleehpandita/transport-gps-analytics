@@ -231,3 +231,81 @@ export interface EventsPage {
   meta: PageMeta
   counts: Partial<Record<VehicleEventType, number>> // del periodo completo, sin el filtro de tipo
 }
+
+// GET /api/operations?date=: la operación del día armada solo con GPS
+export type LegKind = 'llegada' | 'salida' | 'regreso' | 'posicionamiento' | 'maniobra'
+
+// probable: el patrón es claro; por_confirmar: algo es dudoso (ver reasons); confirmado: lo marcó una persona
+export type ServiceStatus = 'probable' | 'por_confirmar' | 'confirmado'
+
+// Lo que puede marcar quien opera
+export type ReviewStatus = 'service' | 'empty' | 'no_show' | 'personal'
+
+export interface TripReview {
+  status: ReviewStatus
+  note: string | null
+  by: string | null
+  at: string
+}
+
+export interface OperationService {
+  trip_id: number
+  vehicle_id: number
+  vehicle: string
+  type: 'llegada' | 'salida' | 'otro' // otro: un viaje que alguien marcó como servicio
+  status: ServiceStatus
+  reasons: string[]
+  review: TripReview | null
+  hotel: string | null // null: punto sin nombre todavía (ver unnamed)
+  hotel_latitude: number
+  hotel_longitude: number
+  terminal: string | null
+  reached_hotel_at: string | null // salida: cuándo llegó por los pasajeros
+  left_at: string // llegada: salió del aeropuerto; salida: salió del hotel
+  arrived_at: string // llegada: llegó al hotel; salida: llegó al aeropuerto
+  wait_seconds: number | null // salida: espera en el hotel
+  stay_seconds: number | null // llegada: cuánto se quedó en el hotel
+  km: number
+}
+
+export interface OperationLeg {
+  trip_id: number
+  vehicle_id: number
+  vehicle: string
+  kind: LegKind
+  status: ServiceStatus | null // null: movimiento vacío sin confirmar
+  review: TripReview | null
+  with_passengers: boolean
+  started_at: string
+  ended_at: string
+  km: number
+  origin: string | null
+  destination: string | null
+}
+
+export interface UnnamedSpot {
+  latitude: number
+  longitude: number
+  first_seen_at: string
+  services: number
+  suggestion: { name: string; distance_m: number } | null // hotel de OpenStreetMap más cercano
+}
+
+export interface OperationDay {
+  date: string
+  summary: {
+    arrivals: number
+    departures: number
+    pending: number
+    confirmed: number
+    km_with_passengers: number
+    km_pending: number // dudosos: no cuentan como km con pasajeros hasta confirmarlos
+    km_empty: number
+    vehicles: number
+    first_start: string | null
+    last_end: string | null
+  }
+  services: OperationService[]
+  legs: OperationLeg[]
+  unnamed: UnnamedSpot[]
+}

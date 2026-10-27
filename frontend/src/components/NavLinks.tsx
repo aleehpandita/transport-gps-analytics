@@ -1,6 +1,6 @@
 // Navegación entre las páginas del panel. La página actual se marca y no es enlace.
 
-export type Page = 'live' | 'history' | 'reports' | 'events'
+export type Page = 'live' | 'history' | 'operation' | 'reports' | 'events'
 
 const LINKS: { page: Page; href: string; label: string; icon: string }[] = [
   {
@@ -16,6 +16,13 @@ const LINKS: { page: Page; href: string; label: string; icon: string }[] = [
     label: 'Historial',
     // Reloj con flecha hacia atrás
     icon: 'M3 12a9 9 0 1 0 3-6.7L3 8 M3 3v5h5 M12 7v5l3 2',
+  },
+  {
+    page: 'operation',
+    href: '#/operacion',
+    label: 'Operación',
+    // Tablilla con lista
+    icon: 'M9 4h6v3H9z M9 5H6v16h12V5h-3 M9 11h6 M9 15h6',
   },
   {
     page: 'reports',

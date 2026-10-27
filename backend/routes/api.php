@@ -3,9 +3,12 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\LiveVehicleController;
+use App\Http\Controllers\Api\OperationController;
+use App\Http\Controllers\Api\PlaceController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ScheduledServiceController;
 use App\Http\Controllers\Api\TripController;
+use App\Http\Controllers\Api\TripReviewController;
 use App\Http\Controllers\Api\VehicleController;
 use App\Http\Controllers\Api\ZoneController;
 use Illuminate\Support\Facades\Route;
@@ -39,6 +42,12 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::get('/events', [EventController::class, 'index']);
+
+    Route::get('/operations', [OperationController::class, 'index']);
+    Route::post('/trip-reviews', [TripReviewController::class, 'store']);
+
+    // Solo administradores (lo revisa el controlador)
+    Route::post('/places', [PlaceController::class, 'store']);
 
     Route::get('/zones', [ZoneController::class, 'index']);
 
