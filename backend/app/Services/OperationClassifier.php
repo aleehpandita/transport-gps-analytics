@@ -64,6 +64,11 @@ class OperationClassifier
     // Una salida con menos espera que esto es dudosa (26 oct, 09:11: 2 min junto a un hotel
     // del aeropuerto, sin servicio en la orden)
     protected const MIN_PICKUP_WAIT_SECONDS = 180;
+    // Si sale del aeropuerto hacia un hotel menos de esto después de dejar pasajeros de una
+    // salida, desde el mismo punto, puede ser una llegada (los pasajeros ya esperaban) o que
+    // vaya por otra salida (27 oct: dejó en T4 y 2 min después fue a recoger a Le Blanc).
+    // Con 3 min o más, en las órdenes del 22 al 26 oct siempre fue una llegada.
+    protected const QUICK_TURN_SECONDS = 180;
 
     /**
      * @param list<array{lat: float, lng: float}> $terminals Terminales del aeropuerto
@@ -92,6 +97,7 @@ class OperationClassifier
             $next = $legs[$i + 1] ?? null;
 
             $leg['kind'] = $this->kind($leg, $out, $next);
+            $leg['doubt'] = $this->doubt($leg, $out);
 
             // Datos del servicio
             if ($leg['kind'] === self::ARRIVAL) {
@@ -150,22 +156,80 @@ class OperationClassifier
             if ($this->isNotPickupSpot($leg['origin'])) {
                 return self::POSITIONING;
             }
-            // El último viaje de verdad antes de este (las maniobras no cuentan)
-            $last = null;
-            for ($k = count($before) - 1; $k >= 0; $k--) {
-                if ($before[$k]['kind'] !== self::MANEUVER) {
-                    $last = $before[$k];
-                    break;
-                }
-            }
-            $afterDropOff = $last
-                && $last['kind'] === self::ARRIVAL
-                && $leg['start'] - $last['end'] <= self::RETURN_WINDOW_MINUTES * 60;
-
-            return $afterDropOff ? self::RETURN : self::DEPARTURE;
+            return $this->isReturn($leg, $before) ? self::RETURN : self::DEPARTURE;
         }
 
         return self::POSITIONING;
+    }
+
+    /**
+     * true si es el regreso vacío después de dejar pasajeros: hubo una llegada hace menos de
+     * RETURN_WINDOW_MINUTES y, desde entonces, solo maniobras o movimientos vacíos, sin una
+     * espera de recogida en el punto de donde sale. 27 oct: dejó en Viva Wyndham Maya pasando
+     * por la caseta de Playacar (3.7 km) y regresó al aeropuerto en 3 min. En cambio el 23
+     * oct, después de dejar en Wyndham, fue al Riu Palace Kukulkan, esperó 7 min y salió con
+     * pasajeros: eso sí es una salida.
+     *
+     * @param list<array> $before
+     */
+    protected function isReturn(array $leg, array $before): bool
+    {
+        $arrival = null;
+        for ($k = count($before) - 1; $k >= 0; $k--) {
+            $kind = $before[$k]['kind'];
+            if ($kind === self::ARRIVAL) {
+                $arrival = $before[$k];
+                break;
+            }
+            if ($kind !== self::MANEUVER && $kind !== self::POSITIONING) {
+                return false;
+            }
+        }
+
+        if (!$arrival || $leg['start'] - $arrival['end'] > self::RETURN_WINDOW_MINUTES * 60) {
+            return false;
+        }
+
+        // ¿Esperó en el punto de donde sale? Una recogida tiene espera; un regreso no.
+        $prev = end($before);
+        $waited = $prev && $this->meters($prev['destination'], $leg['origin']) <= self::SAME_SPOT_METERS
+            ? $leg['start'] - $prev['end']
+            : 0;
+
+        return $waited < self::MIN_PICKUP_WAIT_SECONDS || $prev === $arrival;
+    }
+
+    /**
+     * Motivo de duda que no sale de un solo viaje sino de la secuencia, o null.
+     *
+     * @param list<array> $before
+     */
+    protected function doubt(array $leg, array $before): ?string
+    {
+        $last = null;
+        for ($k = count($before) - 1; $k >= 0; $k--) {
+            if ($before[$k]['kind'] !== self::MANEUVER) {
+                $last = $before[$k];
+                break;
+            }
+        }
+
+        // Llegada que arranca justo después de dejar una salida, en el mismo punto
+        $previous = end($before);
+        if ($leg['kind'] === self::ARRIVAL && $previous && $previous['kind'] === self::DEPARTURE
+            && $leg['start'] - $previous['end'] < self::QUICK_TURN_SECONDS
+            && $this->meters($previous['destination'], $leg['origin']) <= self::SAME_SPOT_METERS) {
+            $last = $previous;
+            return 'Salió del aeropuerto ' . max(1, intdiv($leg['start'] - $last['end'], 60))
+                . ' min después de dejar pasajeros: puede ser una llegada o que fuera por otra salida';
+        }
+
+        // Regreso de una llegada dudosa: si aquella fue a recoger, este viaje fue la salida
+        if ($leg['kind'] === self::RETURN && $last && $last['kind'] === self::ARRIVAL && $last['doubt'] !== null) {
+            return 'Si el viaje anterior fue a recoger pasajeros, este fue la salida con ellos';
+        }
+
+        return null;
     }
 
     /**
@@ -179,10 +243,10 @@ class OperationClassifier
         }
 
         if (!isset($leg['service'])) {
-            return [null, [], false];
+            return $leg['doubt'] ? [self::PENDING, [$leg['doubt']], false] : [null, [], false];
         }
 
-        $reasons = [];
+        $reasons = $leg['doubt'] ? [$leg['doubt']] : [];
         if ($leg['service']['hotel'] === null) {
             $reasons[] = 'Punto sin nombre: puede ser un hotel nuevo, una casa o una parada del chofer';
         }
