@@ -7,8 +7,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Place extends Model
 {
-    // base: donde se guarda la unidad (no es parada larga y sus viajes siempre van vacíos)
-    public const TYPES = ['airport_terminal', 'hotel', 'base', 'other'];
+    // hotel y stop (punto de pasajeros: estación, muelle, residencial, casa) son donde se sube
+    // o baja gente. base: donde se guarda la unidad o para el chofer (no es parada larga y sus
+    // viajes van vacíos). other: gasolinera, espera de choferes y lo demás (viajes vacíos).
+    public const TYPES = ['airport_terminal', 'hotel', 'stop', 'base', 'other'];
 
     // De dónde viene el lugar (ver la migración add_source_to_places_table)
     public const SOURCE_MANUAL = 'manual';

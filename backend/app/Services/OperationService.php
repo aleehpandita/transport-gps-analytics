@@ -146,7 +146,7 @@ class OperationService
             'hotel' => $s['hotel'],
             'hotel_latitude' => $s['hotel_point'][0],
             'hotel_longitude' => $s['hotel_point'][1],
-            'terminal' => $s['type'] === 'otro' ? null : $this->terminalName($terminal),
+            'terminal' => in_array($s['type'], ['otro', OperationClassifier::TRANSFER], true) ? null : $this->terminalName($terminal),
             // Llegada: reached_hotel_at es null. Salida: cuándo llegó por los pasajeros.
             'reached_hotel_at' => isset($s['reached_hotel_at']) ? $this->iso($s['reached_hotel_at']) : null,
             'left_at' => $this->iso($s['left_at']),
@@ -219,7 +219,7 @@ class OperationService
             $spots[] = [
                 'latitude' => $lat,
                 'longitude' => $lng,
-                'first_seen_at' => $this->iso($leg['service']['type'] === OperationClassifier::ARRIVAL ? $leg['end'] : $leg['start']),
+                'first_seen_at' => $this->iso($leg['service']['type'] === OperationClassifier::DEPARTURE ? $leg['start'] : $leg['end']),
                 'services' => 1,
                 'suggestion' => $this->suggestion($lat, $lng),
             ];

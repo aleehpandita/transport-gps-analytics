@@ -35,6 +35,9 @@ class OperationClassifier
     public const RETURN = 'regreso';
     public const POSITIONING = 'posicionamiento';
     public const MANEUVER = 'maniobra';
+    // Entre dos puntos de pasajeros sin pasar por el aeropuerto (29 oct: de Chiquilá a
+    // Villa del Palmar). Puede ser un traslado o la unidad yendo vacía de un lado a otro.
+    public const TRANSFER = 'traslado';
 
     public const WITH_PASSENGERS = [self::ARRIVAL, self::DEPARTURE];
 
@@ -69,6 +72,10 @@ class OperationClassifier
     // vaya por otra salida (27 oct: dejó en T4 y 2 min después fue a recoger a Le Blanc).
     // Con 3 min o más, en las órdenes del 22 al 26 oct siempre fue una llegada.
     protected const QUICK_TURN_SECONDS = 180;
+    // Un traslado: entre dos puntos de pasajeros, de al menos esta distancia, y con espera
+    // en el origen (se subió alguien). Más corto o sin espera, es reposicionarse vacío.
+    protected const TRANSFER_MIN_KM = 20;
+    protected const TRANSFER_MIN_WAIT_SECONDS = 600;
 
     /**
      * @param list<array{lat: float, lng: float}> $terminals Terminales del aeropuerto
@@ -124,6 +131,19 @@ class OperationClassifier
                 ];
             }
 
+            if ($leg['kind'] === self::TRANSFER) {
+                $leg['service'] = [
+                    'type' => self::TRANSFER,
+                    'hotel' => $leg['destination']['name'],
+                    'hotel_point' => [$leg['destination']['lat'], $leg['destination']['lng']],
+                    'terminal' => null,
+                    'reached_hotel_at' => $prev ? $prev['end'] : null,
+                    'left_at' => $leg['start'],
+                    'arrived_at' => $leg['end'],
+                    'wait_seconds' => $prev ? $leg['start'] - $prev['end'] : null,
+                ];
+            }
+
             [$leg['status'], $leg['reasons'], $leg['with_passengers']] = $this->status($leg);
             $out[] = $leg;
         }
@@ -157,6 +177,18 @@ class OperationClassifier
                 return self::POSITIONING;
             }
             return $this->isReturn($leg, $before) ? self::RETURN : self::DEPARTURE;
+        }
+
+        // Entre dos puntos de pasajeros, lejos y con espera en el origen: posible traslado
+        $prev = end($before) ?: null;
+        $waited = $prev && $this->meters($prev['destination'], $leg['origin']) <= self::SAME_SPOT_METERS
+            ? $leg['start'] - $prev['end']
+            : 0;
+        if ($leg['km'] >= self::TRANSFER_MIN_KM
+            && $this->isPickupSpot($leg['origin'])
+            && $this->isPickupSpot($leg['destination'])
+            && $waited >= self::TRANSFER_MIN_WAIT_SECONDS) {
+            return self::TRANSFER;
         }
 
         return self::POSITIONING;
@@ -247,6 +279,9 @@ class OperationClassifier
         }
 
         $reasons = $leg['doubt'] ? [$leg['doubt']] : [];
+        if ($leg['kind'] === self::TRANSFER) {
+            $reasons[] = 'Viaje entre dos puntos sin pasar por el aeropuerto: puede ser un traslado o un movimiento vacío';
+        }
         if ($leg['service']['hotel'] === null) {
             $reasons[] = 'Punto sin nombre: puede ser un hotel nuevo, una casa o una parada del chofer';
         }
@@ -268,6 +303,12 @@ class OperationClassifier
             return true;
         }
 
+        // Un punto de pasajeros junto al aeropuerto no es el aeropuerto (28 oct: la estación
+        // del Tren Maya está a 1.1 km de T3)
+        if (in_array($point['type'] ?? null, ['hotel', 'stop'], true)) {
+            return false;
+        }
+
         foreach ($this->terminals as $terminal) {
             if ($this->meters($point, $terminal) <= self::AIRPORT_METERS) {
                 return true;
@@ -283,7 +324,16 @@ class OperationClassifier
      */
     protected function isNotPickupSpot(array $point): bool
     {
-        return ($point['type'] ?? null) !== null && $point['type'] !== 'hotel';
+        return ($point['type'] ?? null) !== null && !in_array($point['type'], ['hotel', 'stop'], true);
+    }
+
+    /**
+     * Donde se sube o baja gente: un hotel, un punto de pasajeros (estación, muelle, casa
+     * o residencial) o un punto sin nombre, que puede ser cualquiera de esos.
+     */
+    protected function isPickupSpot(array $point): bool
+    {
+        return !$this->isNotPickupSpot($point) && !$this->isAirport($point);
     }
 
     protected function meters(array $a, array $b): float

@@ -233,7 +233,7 @@ export interface EventsPage {
 }
 
 // GET /api/operations?date=: la operación del día armada solo con GPS
-export type LegKind = 'llegada' | 'salida' | 'regreso' | 'posicionamiento' | 'maniobra'
+export type LegKind = 'llegada' | 'salida' | 'traslado' | 'regreso' | 'posicionamiento' | 'maniobra'
 
 // probable: el patrón es claro; por_confirmar: algo es dudoso (ver reasons); confirmado: lo marcó una persona
 export type ServiceStatus = 'probable' | 'por_confirmar' | 'confirmado'
@@ -252,7 +252,7 @@ export interface OperationService {
   trip_id: number
   vehicle_id: number
   vehicle: string
-  type: 'llegada' | 'salida' | 'otro' // otro: un viaje que alguien marcó como servicio
+  type: 'llegada' | 'salida' | 'traslado' | 'otro' // traslado: entre dos puntos sin aeropuerto; otro: marcado a mano
   status: ServiceStatus
   reasons: string[]
   review: TripReview | null

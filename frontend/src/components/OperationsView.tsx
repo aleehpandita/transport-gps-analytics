@@ -22,6 +22,7 @@ import { NavLinks } from './NavLinks'
 const KIND_INFO: Record<LegKind, { label: string; tone: string }> = {
   llegada: { label: 'Llegada', tone: 'bg-ok' },
   salida: { label: 'Salida', tone: 'bg-ok' },
+  traslado: { label: 'Traslado', tone: 'bg-ok' },
   regreso: { label: 'Regreso vacío', tone: 'bg-ink-muted' },
   posicionamiento: { label: 'Vacío', tone: 'bg-ink-muted' },
   maniobra: { label: 'Maniobra', tone: 'bg-ink-muted' },
@@ -39,6 +40,21 @@ const REVIEW_LABEL: Record<ReviewStatus, string> = {
   no_show: 'No-show',
   personal: 'Uso personal',
 }
+
+const SERVICE_TYPE_LABEL: Record<OperationService['type'], string> = {
+  llegada: 'Llegada',
+  salida: 'Salida',
+  traslado: 'Traslado',
+  otro: 'Otro',
+}
+
+// Tipos de lugar al dar de alta un punto sin nombre
+const PLACE_TYPES: { id: string; label: string }[] = [
+  { id: 'hotel', label: 'Hotel' },
+  { id: 'stop', label: 'Punto de pasajeros (estación, muelle, residencial, casa)' },
+  { id: 'other', label: 'Otro, sin pasajeros (gasolinera, espera de choferes)' },
+  { id: 'base', label: 'Base o casa del chofer' },
+]
 
 const lobby = (name: string | null) => name?.replace(/\s+lobby$/i, '') ?? null
 const mapsUrl = (lat: number, lng: number) => `https://www.google.com/maps?q=${lat},${lng}`
@@ -374,9 +390,7 @@ function ServicesTable({
                   className={`align-top hover:bg-surface-raised/60 ${s.status === 'por_confirmar' && !s.review ? 'bg-risk/5' : ''}`}
                 >
                   <td className="px-3 py-2 tabular-nums whitespace-nowrap">{formatClock(s.left_at)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {s.type === 'llegada' ? 'Llegada' : s.type === 'salida' ? 'Salida' : 'Otro'}
-                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">{SERVICE_TYPE_LABEL[s.type]}</td>
                   <td className="px-3 py-2">
                     <StatusBadge status={s.status} review={s.review} />
                   </td>
@@ -445,6 +459,10 @@ function detail(s: OperationService): string {
   if (s.type === 'otro') {
     return `Viaje de ${formatClock(s.left_at)} a ${formatClock(s.arrived_at)} (${drive}), marcado como servicio`
   }
+  if (s.type === 'traslado') {
+    const waited = s.wait_seconds !== null ? `esperó ${formatDuration(s.wait_seconds)}; ` : ''
+    return `${waited}salió ${formatClock(s.left_at)}, llegó ${formatClock(s.arrived_at)} (${drive})`
+  }
   if (s.type === 'llegada') {
     return `Salió del aeropuerto ${formatClock(s.left_at)}, en el hotel ${formatClock(s.arrived_at)} (${drive})`
   }
@@ -474,12 +492,13 @@ function UnnamedSpots({ spots, canApprove, onApproved }: { spots: UnnamedSpot[];
 
 function SpotRow({ spot, canApprove, onApproved }: { spot: UnnamedSpot; canApprove: boolean; onApproved: () => void }) {
   const [name, setName] = useState(spot.suggestion ? `${spot.suggestion.name} lobby` : '')
+  const [type, setType] = useState('hotel')
   const [status, setStatus] = useState<{ kind: 'idle' | 'saving' | 'error'; message?: string }>({ kind: 'idle' })
 
   async function approve() {
     setStatus({ kind: 'saving' })
     try {
-      await createPlace({ name: name.trim(), latitude: spot.latitude, longitude: spot.longitude, type: 'hotel', radius_m: 60 })
+      await createPlace({ name: name.trim(), latitude: spot.latitude, longitude: spot.longitude, type, radius_m: 60 })
       onApproved()
     } catch (e) {
       setStatus({ kind: 'error', message: e instanceof Error ? e.message : 'No se pudo guardar' })
@@ -516,6 +535,18 @@ function SpotRow({ spot, canApprove, onApproved }: { spot: UnnamedSpot; canAppro
             aria-label="Nombre del lugar"
             className="min-w-56 flex-1 rounded-md border border-line bg-surface-raised px-3 py-1.5"
           />
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            aria-label="Tipo de lugar"
+            className="rounded-md border border-line bg-surface-raised px-2 py-1.5"
+          >
+            {PLACE_TYPES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             disabled={name.trim() === '' || status.kind === 'saving'}

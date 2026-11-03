@@ -28,6 +28,15 @@ class TripPlaceResolver
     // Horas por consulta: muy por debajo del límite de variables de SQLite
     protected const CHUNK = 400;
 
+    /**
+     * Entre un viaje y el siguiente la unidad se puede mover dentro del radio de salida sin
+     * que eso sea un viaje (TripBuilderService::LEAVE_RADIUS_KM). 27 oct: se detuvo en la
+     * entrada de Punta Cancún, entró al lobby de Coral Beach, recogió y salió; el viaje
+     * terminó en la entrada y el siguiente empezó en la calle. Si un extremo no cae en un
+     * lugar, se busca el lugar donde estuvo la unidad en ese hueco, si duró menos que esto.
+     */
+    protected const GAP_MAX_SECONDS = 3600;
+
     /** @var Collection<int, Place>|null */
     protected ?Collection $places = null;
 
@@ -66,8 +75,8 @@ class TripPlaceResolver
 
         $places = $this->places();
 
-        // El viaje anterior de cada uno, aunque no venga en la lista (el primero del día, por ejemplo)
-        $previous = $this->previousTrips($trips);
+        // El viaje anterior y el siguiente de cada uno, aunque no vengan en la lista
+        [$previous, $next] = $this->neighbours($trips);
         $previousEnds = $this->positionsAt($previous->map(fn (Trip $t) => [$t->vehicle_id, $t->ended_at])->values());
 
         $result = [];
@@ -77,9 +86,15 @@ class TripPlaceResolver
             $end = $positions->get($this->key($trip->vehicle_id, $trip->ended_at));
 
             $origin = $this->point($places, $start);
-
-            // Sin lugar al inicio: si arrancó cerca de donde terminó el viaje anterior, viene de ahí
             $before = $previous->get($trip->id);
+            $after = $next->get($trip->id);
+
+            // Sin lugar al inicio: el lugar donde estuvo antes de arrancar
+            if ($origin['name'] === null && $before) {
+                $origin = $this->placeInGap($places, $trip->vehicle_id, $before->ended_at, $trip->started_at) ?? $origin;
+            }
+
+            // Si no, si arrancó cerca de donde terminó el viaje anterior, viene de ahí
             $beforeEnd = $before ? $previousEnds->get($this->key($before->vehicle_id, $before->ended_at)) : null;
 
             if ($origin['name'] === null && $start && $beforeEnd) {
@@ -90,9 +105,15 @@ class TripPlaceResolver
                 }
             }
 
+            // Sin lugar al final: el lugar donde estuvo antes del siguiente viaje
+            $destination = $this->point($places, $end);
+            if ($destination['name'] === null && $after) {
+                $destination = $this->placeInGap($places, $trip->vehicle_id, $trip->ended_at, $after->started_at) ?? $destination;
+            }
+
             $result[$trip->id] = [
                 'origin' => $origin,
-                'destination' => $this->point($places, $end),
+                'destination' => $destination,
             ];
         }
 
@@ -176,33 +197,76 @@ class TripPlaceResolver
     }
 
     /**
-     * El viaje inmediatamente anterior (misma unidad) de cada viaje.
+     * El viaje inmediatamente anterior y el siguiente (misma unidad) de cada viaje.
      *
      * @param Collection<int, Trip> $trips
-     * @return Collection<int, Trip> por id del viaje
+     * @return array{0: Collection<int, Trip>, 1: Collection<int, Trip>} por id del viaje
      */
-    protected function previousTrips(Collection $trips): Collection
+    protected function neighbours(Collection $trips): array
     {
-        // Todos los viajes de esas unidades desde el día anterior al primero de la lista
+        // Todos los viajes de esas unidades desde un día antes del primero hasta un día después del último
         $all = Trip::whereIn('vehicle_id', $trips->pluck('vehicle_id')->unique()->values())
             ->where('data_source', 'real')
             ->where('started_at', '>=', $trips->min('started_at')->copy()->subDay())
-            ->where('started_at', '<=', $trips->max('started_at'))
+            ->where('started_at', '<=', $trips->max('started_at')->copy()->addDay())
             ->orderBy('vehicle_id')
             ->orderBy('started_at')
             ->get(['id', 'vehicle_id', 'started_at', 'ended_at']);
 
         $previous = collect();
+        $next = collect();
         $last = [];
 
         foreach ($all as $trip) {
             if (isset($last[$trip->vehicle_id])) {
                 $previous->put($trip->id, $last[$trip->vehicle_id]);
+                $next->put($last[$trip->vehicle_id]->id, $trip);
             }
             $last[$trip->vehicle_id] = $trip;
         }
 
-        return $previous;
+        return [$previous, $next];
+    }
+
+    /**
+     * El lugar donde más tiempo estuvo la unidad entre dos viajes, o null si no pisó ninguno
+     * o el hueco es muy largo. Por tiempo y no por el primero que pisó: 27 oct, al entrar al
+     * lobby de Coral Beach la unidad pasó unos segundos por el radio del Krystal.
+     *
+     * @param Collection<int, Place> $places
+     */
+    protected function placeInGap(Collection $places, int $vehicleId, \DateTimeInterface $from, \DateTimeInterface $to): ?array
+    {
+        if ($to->getTimestamp() - $from->getTimestamp() > self::GAP_MAX_SECONDS) {
+            return null;
+        }
+
+        $positions = Position::where('vehicle_id', $vehicleId)
+            ->where('valid', true)
+            ->where('device_time', '>=', $from)
+            ->where('device_time', '<=', $to)
+            ->orderBy('device_time')
+            ->get(['device_time', 'latitude', 'longitude']);
+
+        $seconds = [];
+        $points = [];
+        foreach ($positions as $i => $position) {
+            $point = $this->point($places, $position);
+            $nextTime = $positions[$i + 1]->device_time ?? $to;
+            if ($point['name'] === null) {
+                continue;
+            }
+            $seconds[$point['place_id']] = ($seconds[$point['place_id']] ?? 0) + ($nextTime->getTimestamp() - $position->device_time->getTimestamp());
+            $points[$point['place_id']] ??= $point;
+        }
+
+        if (!$seconds) {
+            return null;
+        }
+
+        arsort($seconds);
+
+        return $points[array_key_first($seconds)];
     }
 
     protected function key(int $vehicleId, \DateTimeInterface $time): string
