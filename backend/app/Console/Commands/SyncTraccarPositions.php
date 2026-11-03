@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
  * Sincroniza posiciones desde Traccar hacia la tabla positions.
  *
  *   php artisan traccar:sync-positions             (últimas 24 horas)
- *   php artisan traccar:sync-positions --hours=72
+ *   php artisan traccar:sync-positions --hours=130 (se pide a Traccar en bloques de 6 h)
  *
  * Decisiones (detalle en docs/piloto-fmc920.md):
  *
@@ -28,12 +28,17 @@ use Illuminate\Support\Facades\DB;
  *      recibe confirmación, y Traccar guarda cada reenvío con un id distinto
  *      (13 % de duplicados en el piloto).
  *
+ * - Por bloques de --chunk-hours (6 por defecto): pedir 130 h de golpe (2 nov) trajo
+ *   ~15 mil posiciones en una sola respuesta y pasó de 128 MB.
+ *
  * - Velocidad: Traccar entrega nudos; se convierte a km/h una sola vez, al guardar.
  * - ignition y motion vienen dentro de attributes, no en el primer nivel.
  */
 class SyncTraccarPositions extends Command
 {
-    protected $signature = 'traccar:sync-positions {--hours=24 : Ventana de horas hacia atrás a consultar}';
+    protected $signature = 'traccar:sync-positions
+        {--hours=24 : Ventana de horas hacia atrás a consultar}
+        {--chunk-hours=6 : Horas por consulta a Traccar}';
 
     protected $description = 'Sincroniza posiciones desde Traccar hacia la tabla positions, sin duplicados';
 
@@ -53,34 +58,54 @@ class SyncTraccarPositions extends Command
             return self::SUCCESS;
         }
 
+        $chunkHours = max(1, (int) $this->option('chunk-hours'));
+
         foreach ($vehicles as $vehicle) {
             $this->info("Sincronizando {$vehicle->name} (traccar_device_id: {$vehicle->traccar_device_id})...");
 
-            $positions = $traccar->getPositions(
-                $vehicle->traccar_device_id,
-                $from->toIso8601String(),
-                $to->toIso8601String()
-            );
+            $totals = [0, 0, 0];
 
-            // Lo que ya existe para este vehículo en la ventana, en una sola consulta.
-            // Una hora de margen: Traccar filtra por fixTime y aquí se guarda deviceTime.
-            $existing = Position::where('vehicle_id', $vehicle->id)
-                ->where('data_source', 'real')
-                ->where('device_time', '>=', $from->subHour())
-                ->get(['traccar_position_id', 'device_time', 'latitude', 'longitude']);
+            for ($start = $from; $start < $to; $start = $start->addHours($chunkHours)) {
+                $end = $start->addHours($chunkHours)->min($to);
 
-            $knownIds = $existing->pluck('traccar_position_id')->flip()->all();
+                $positions = $traccar->getPositions(
+                    $vehicle->traccar_device_id,
+                    $start->toIso8601String(),
+                    $end->toIso8601String()
+                );
 
-            $knownKeys = $existing
-                ->mapWithKeys(fn (Position $p) => [
-                    $this->dedupKey($p->device_time, $p->latitude, $p->longitude) => true,
-                ])
-                ->all();
+                if (empty($positions)) {
+                    continue;
+                }
 
-            [$created, $sameId, $resent] = DB::transaction(
-                fn () => $this->storePositions($vehicle, $positions, $knownIds, $knownKeys)
-            );
+                // Lo que ya existe para este vehículo en el bloque, en una sola consulta.
+                // Una hora de margen: Traccar filtra por fixTime y aquí se guarda deviceTime.
+                $existing = Position::where('vehicle_id', $vehicle->id)
+                    ->where('data_source', 'real')
+                    ->where('device_time', '>=', $start->subHour())
+                    ->where('device_time', '<=', $end->addHour())
+                    ->get(['traccar_position_id', 'device_time', 'latitude', 'longitude']);
 
+                $knownIds = $existing->pluck('traccar_position_id')->flip()->all();
+
+                $knownKeys = $existing
+                    ->mapWithKeys(fn (Position $p) => [
+                        $this->dedupKey($p->device_time, $p->latitude, $p->longitude) => true,
+                    ])
+                    ->all();
+
+                $counts = DB::transaction(
+                    fn () => $this->storePositions($vehicle, $positions, $knownIds, $knownKeys)
+                );
+
+                foreach ($counts as $i => $n) {
+                    $totals[$i] += $n;
+                }
+
+                unset($positions, $existing, $knownIds, $knownKeys);
+            }
+
+            [$created, $sameId, $resent] = $totals;
             $this->info("  → {$created} nuevas, {$sameId} ya existentes, {$resent} reenvíos descartados.");
         }
 
