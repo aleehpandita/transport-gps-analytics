@@ -97,7 +97,10 @@ class OperationService
             'summary' => $this->summary($legs, $vehicles),
             'services' => $services->map(fn ($l) => $this->serviceRow($l, $vehicles))->values(),
             'legs' => collect($legs)->map(fn ($l) => $this->legRow($l, $vehicles))->values(),
-            'unnamed' => $this->unnamed($services->filter(fn ($l) => isset($l['service']))),
+            // Sin los que alguien ya marcó como sin pasajeros, no-show o uso personal: ahí no
+            // hay hotel que dar de alta (2 nov, 21:07: parada en la carretera)
+            'unnamed' => $this->unnamed($services->filter(fn ($l) => isset($l['service'])
+                && in_array($l['review']['status'] ?? null, [null, OperationClassifier::REVIEW_SERVICE], true))),
         ];
     }
 
