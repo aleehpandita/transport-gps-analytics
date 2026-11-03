@@ -57,6 +57,13 @@ class OperationClassifier
     protected const MIN_SERVICE_KM = 2;
     // Tiempo en el destino a partir del cual ya no fue una bajada sino una espera
     protected const LONG_WAIT_MINUTES = 15;
+    // Si después de esa espera regresa al aeropuerto, basta con menos: fue vacío a recoger y
+    // salió con pasajeros. Medido: las dejadas duran de 1 a 8 min (2 nov: Moon Palace 1.5,
+    // Hilton 6; 31 oct: Almaraza 8) y las recogidas después de posicionarse 15 a 19 min
+    // (2 nov: Kempinski, de 12:42 a 12:59; 28 oct: Sunscape, de 18:10 a 18:29).
+    protected const PICKUP_STAY_MINUTES = 10;
+    // Para buscar el hotel de una recogida detrás de las maniobras en la entrada
+    protected const PICKUP_AREA_METERS = 1000;
     // El aeropuerto es todo lo que esté a esta distancia de una terminal (incluye el punto
     // de encuentro de llegadas y la espera de transportistas)
     protected const AIRPORT_METERS = 1500;
@@ -103,7 +110,7 @@ class OperationClassifier
             $prev = $out[$i - 1] ?? null;
             $next = $legs[$i + 1] ?? null;
 
-            $leg['kind'] = $this->kind($leg, $out, $next);
+            $leg['kind'] = $this->kind($leg, $out, $legs, $i);
             $leg['doubt'] = $this->doubt($leg, $out);
 
             // Datos del servicio
@@ -118,16 +125,16 @@ class OperationClassifier
                     'stay_seconds' => $next ? $next['start'] - $leg['end'] : null,
                 ];
             } elseif ($leg['kind'] === self::DEPARTURE) {
-                $waitedHere = $prev && $this->meters($prev['destination'], $leg['origin']) <= self::SAME_SPOT_METERS;
+                [$hotelPoint, $reachedAt] = $this->pickupPoint($leg, $out);
                 $leg['service'] = [
                     'type' => self::DEPARTURE,
-                    'hotel' => $leg['origin']['name'],
-                    'hotel_point' => [$leg['origin']['lat'], $leg['origin']['lng']],
+                    'hotel' => $hotelPoint['name'] ?? null,
+                    'hotel_point' => [$hotelPoint['lat'], $hotelPoint['lng']],
                     'terminal' => $leg['destination']['name'],
-                    'reached_hotel_at' => $waitedHere ? $prev['end'] : null, // llegó por los pasajeros
+                    'reached_hotel_at' => $reachedAt, // llegó por los pasajeros
                     'left_at' => $leg['start'],
                     'arrived_at' => $leg['end'],     // llegó al aeropuerto
-                    'wait_seconds' => $waitedHere ? $leg['start'] - $prev['end'] : null,
+                    'wait_seconds' => $reachedAt !== null ? $leg['start'] - $reachedAt : null,
                 ];
             }
 
@@ -153,8 +160,9 @@ class OperationClassifier
 
     /**
      * @param list<array> $before Viajes anteriores ya clasificados
+     * @param list<array> $legs Todos los viajes del día; $i es el actual
      */
-    protected function kind(array $leg, array $before, ?array $next): string
+    protected function kind(array $leg, array $before, array $legs, int $i): string
     {
         $fromAirport = $this->isAirport($leg['origin']);
         $toAirport = $this->isAirport($leg['destination']);
@@ -167,9 +175,20 @@ class OperationClassifier
             if ($this->isNotPickupSpot($leg['destination'])) {
                 return self::POSITIONING;
             }
-            $stay = $next ? $next['start'] - $leg['end'] : 0;
+            // Cuánto se quedó: hasta que se va de verdad, sin contar las maniobras en la
+            // entrada del hotel (2 nov, Kempinski: se movió 400 m a la salida al bulevar)
+            $j = $this->leavingIndex($legs, $i);
+            $leaving = $legs[$j] ?? null;
+            $stay = $leaving ? $leaving['start'] - $leg['end'] : 0;
 
-            return $stay < self::LONG_WAIT_MINUTES * 60 ? self::ARRIVAL : self::POSITIONING;
+            if ($stay >= self::LONG_WAIT_MINUTES * 60) {
+                return self::POSITIONING;
+            }
+            if ($stay >= self::PICKUP_STAY_MINUTES * 60 && $this->isAirport($leaving['destination'])) {
+                return self::POSITIONING;
+            }
+
+            return self::ARRIVAL;
         }
 
         if ($toAirport) {
@@ -192,6 +211,60 @@ class OperationClassifier
         }
 
         return self::POSITIONING;
+    }
+
+    /**
+     * Índice del viaje con el que la unidad se va del destino del viaje $i: el primero
+     * después de $i que no sea una maniobra corta en la zona (las que no llegan al
+     * aeropuerto). Puede ser count($legs) si el día termina ahí.
+     *
+     * @param list<array> $legs
+     */
+    protected function leavingIndex(array $legs, int $i): int
+    {
+        $j = $i + 1;
+        while (isset($legs[$j])
+            && $legs[$j]['km'] < self::MIN_SERVICE_KM
+            && !$this->isAirport($legs[$j]['destination'])) {
+            $j++;
+        }
+
+        return $j;
+    }
+
+    /**
+     * Dónde se subieron los pasajeros de una salida y a qué hora llegó la unidad ahí:
+     * [punto, timestamp o null]. Si antes hubo maniobras cortas (acomodarse en la entrada,
+     * salir al bulevar), el punto es donde se detuvo antes de ellas. 2 nov: esperó en el
+     * lobby del Kempinski de 12:42 a 12:57 y la salida arrancó a 400 m, en el bulevar.
+     *
+     * @param list<array> $before
+     */
+    protected function pickupPoint(array $leg, array $before): array
+    {
+        $k = count($before) - 1;
+        while ($k >= 0 && $before[$k]['kind'] === self::MANEUVER && $before[$k]['km'] < self::MIN_SERVICE_KM) {
+            $k--;
+        }
+
+        $skipped = $k < count($before) - 1;
+        if ($skipped && $k >= 0
+            && !$this->isAirport($before[$k]['destination'])
+            && $this->meters($before[$k]['destination'], $leg['origin']) <= self::PICKUP_AREA_METERS) {
+            $point = $before[$k]['destination'];
+            // El nombre del hotel manda sobre el punto sin nombre de la salida al bulevar
+            if (($point['name'] ?? null) === null && ($leg['origin']['name'] ?? null) !== null) {
+                $point = $leg['origin'];
+            }
+            return [$point, $before[$k]['end']];
+        }
+
+        $prev = end($before) ?: null;
+        if ($prev && $this->meters($prev['destination'], $leg['origin']) <= self::SAME_SPOT_METERS) {
+            return [$leg['origin'], $prev['end']];
+        }
+
+        return [$leg['origin'], null];
     }
 
     /**

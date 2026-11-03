@@ -113,6 +113,22 @@ class TripBuilderService
     protected const INNER_STOP_MERGE_METERS = 150;
 
     /**
+     * Regla 6 (viaje redondo desde el aeropuerto): dejadas en la calle, sin hotel en el mapa
+     * y sin dar la vuelta. Medido el 2 nov: T4 → centro de Cancún → aeropuerto, 34 km. En el
+     * centro la unidad se detuvo 2 min (20:09 a 20:11) pero el equipo reportó 6 a 10 km/h,
+     * así que ninguna regla cortó y el servicio se perdió como un solo viaje redondo.
+     *
+     * Un viaje que sale del aeropuerto, se aleja ROUND_TRIP_MIN_KM o más y termina a menos de
+     * ROUND_TRIP_BACK_KM de donde salió no tiene sentido sin una parada en medio: se parte en
+     * la parada más larga (TURN_STOP_SECONDS o más) a ROUND_TRIP_STOP_MIN_KM o más del
+     * aeropuerto que no esté junto a un semáforo. Solo aplica si las reglas 4 y 5 no
+     * encontraron nada.
+     */
+    protected const ROUND_TRIP_MIN_KM = 5;
+    protected const ROUND_TRIP_BACK_KM = 5;
+    protected const ROUND_TRIP_STOP_MIN_KM = 3;
+
+    /**
      * Segundos de movimiento sostenido requeridos para confirmar inicio de viaje.
      */
     protected int $startConfirmationSeconds;
@@ -444,6 +460,8 @@ class TripBuilderService
         $first = $positions[0];
         $last = $positions[$n - 1];
         $found = [];
+        // Paradas que no cumplieron las reglas 4 y 5 pero sirven para la regla 6
+        $candidates = [];
 
         for ($i = 0; $i < $n; $i++) {
             $anchor = $positions[$i];
@@ -473,7 +491,14 @@ class TripBuilderService
             $isStop = ($seconds >= self::TURN_STOP_SECONDS && $this->turnedAround($positions, $start, $j))
                 || ($this->nearHotel($anchor) && !$this->signals()->isNear($anchor->latitude, $anchor->longitude, self::HOTEL_STOP_SIGNAL_METERS));
 
-            if (!$isStop || $this->signals()->isNear($anchor->latitude, $anchor->longitude, self::SIGNAL_METERS)) {
+            if ($this->signals()->isNear($anchor->latitude, $anchor->longitude, self::SIGNAL_METERS)) {
+                continue;
+            }
+
+            if (!$isStop) {
+                if ($seconds >= self::TURN_STOP_SECONDS) {
+                    $candidates[] = [$start, $j, $seconds];
+                }
                 continue;
             }
 
@@ -487,7 +512,49 @@ class TripBuilderService
             $found[] = [$start, $j];
         }
 
+        if (!$found && ($stop = $this->roundTripStop($positions, $candidates))) {
+            $found[] = $stop;
+        }
+
         return $found;
+    }
+
+    /**
+     * Regla 6: en un viaje redondo desde el aeropuerto, la parada más larga lejos del
+     * aeropuerto. null si el viaje no es redondo o no hay parada.
+     *
+     * @param Position[] $positions
+     * @param list<array{0: int, 1: int, 2: int}> $candidates [inicio, fin, segundos]
+     * @return array{0: int, 1: int}|null
+     */
+    protected function roundTripStop(array $positions, array $candidates): ?array
+    {
+        $first = $positions[0];
+        $last = $positions[count($positions) - 1];
+
+        if (!$candidates
+            || !$this->nearAirport($first)
+            || $this->distanceKm($first, $last) > self::ROUND_TRIP_BACK_KM) {
+            return null;
+        }
+
+        $farthest = 0;
+        foreach ($positions as $p) {
+            $farthest = max($farthest, $this->distanceKm($first, $p));
+        }
+        if ($farthest < self::ROUND_TRIP_MIN_KM) {
+            return null;
+        }
+
+        $best = null;
+        foreach ($candidates as [$start, $end, $seconds]) {
+            if ($this->distanceKm($first, $positions[$start]) >= self::ROUND_TRIP_STOP_MIN_KM
+                && (!$best || $seconds > $best[2])) {
+                $best = [$start, $end, $seconds];
+            }
+        }
+
+        return $best ? [$best[0], $best[1]] : null;
     }
 
     /**
