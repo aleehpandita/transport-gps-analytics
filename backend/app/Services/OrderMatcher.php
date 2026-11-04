@@ -1,0 +1,115 @@
+<?php
+
+namespace App\Services;
+
+/**
+ * Compara las órdenes de servicio de un día contra los servicios que detectó el GPS.
+ *
+ * Cada orden se empareja con a lo más un servicio de la misma unidad y del mismo tipo,
+ * dentro de WINDOW_MINUTES de la hora de la orden. La hora que se compara es cuando la
+ * unidad arrancó con los pasajeros: en una llegada, cuando salió del aeropuerto; en una
+ * salida, cuando salió del hotel. Medido el 2 nov: entre 1 y 8 min de diferencia.
+ * Se prefiere el que coincide en lugar y, después, el más cercano en hora.
+ *
+ * Resultado por orden:
+ *   - ok: tipo, hora y lugar correctos
+ *   - sin_nombre: tipo y hora correctos, pero el GPS paró en un punto sin nombre
+ *   - otro_lugar: tipo y hora correctos, en otro lugar del catálogo
+ *   - no_detectado: ningún servicio la explica
+ * Y los servicios que no explica ninguna orden: inventados por el GPS.
+ *
+ * Trabaja sobre arreglos simples para poder probarlo sin base de datos.
+ */
+class OrderMatcher
+{
+    public const OK = 'ok';
+    public const UNNAMED = 'sin_nombre';
+    public const OTHER_PLACE = 'otro_lugar';
+    public const MISSED = 'no_detectado';
+
+    protected const WINDOW_MINUTES = 75;
+    // Un servicio en un punto a esta distancia del lugar de la orden es el mismo lugar
+    // (un lobby dado de alta dos veces, la entrada de un complejo)
+    protected const SAME_PLACE_METERS = 300;
+
+    /**
+     * @param list<array{id: int, vehicle_id: int, time: int, type: string, place_id: ?int,
+     *   place_text: string, place_lat: ?float, place_lng: ?float}> $orders time en timestamp
+     * @param list<array{trip_id: int, vehicle_id: int, type: string, left_at: int,
+     *   place_id: ?int, hotel: ?string, hotel_latitude: ?float, hotel_longitude: ?float,
+     *   status: string}> $services left_at en timestamp
+     * @return array{orders: list<array>, extra: list<array>}
+     */
+    public function match(array $orders, array $services): array
+    {
+        // Todas las parejas posibles, de la mejor a la peor
+        $pairs = [];
+        foreach ($orders as $o => $order) {
+            foreach ($services as $s => $service) {
+                if ($service['vehicle_id'] !== $order['vehicle_id'] || $service['type'] !== $order['type']) {
+                    continue;
+                }
+                $minutes = abs($service['left_at'] - $order['time']) / 60;
+                if ($minutes > self::WINDOW_MINUTES) {
+                    continue;
+                }
+                $result = $this->placeResult($order, $service);
+                $rank = [self::OK => 0, self::UNNAMED => 1, self::OTHER_PLACE => 2][$result];
+                $pairs[] = [$rank, $minutes, $o, $s, $result];
+            }
+        }
+        usort($pairs, fn ($a, $b) => [$a[0], $a[1]] <=> [$b[0], $b[1]]);
+
+        $usedOrders = [];
+        $usedServices = [];
+        $results = [];
+        foreach ($pairs as [, $minutes, $o, $s, $result]) {
+            if (isset($usedOrders[$o]) || isset($usedServices[$s])) {
+                continue;
+            }
+            $usedOrders[$o] = $usedServices[$s] = true;
+            $results[$o] = $orders[$o] + [
+                'result' => $result,
+                'service' => $services[$s],
+                'minutes' => (int) round(($services[$s]['left_at'] - $orders[$o]['time']) / 60),
+            ];
+        }
+
+        foreach ($orders as $o => $order) {
+            $results[$o] ??= $order + ['result' => self::MISSED, 'service' => null, 'minutes' => null];
+        }
+        ksort($results);
+
+        $extra = [];
+        foreach ($services as $s => $service) {
+            if (!isset($usedServices[$s])) {
+                $extra[] = $service;
+            }
+        }
+
+        return ['orders' => array_values($results), 'extra' => $extra];
+    }
+
+    protected function placeResult(array $order, array $service): string
+    {
+        if ($order['place_id'] !== null && $service['place_id'] === $order['place_id']) {
+            return self::OK;
+        }
+
+        if ($order['place_lat'] !== null && $service['hotel_latitude'] !== null
+            && $this->meters($order['place_lat'], $order['place_lng'], $service['hotel_latitude'], $service['hotel_longitude']) <= self::SAME_PLACE_METERS) {
+            return self::OK;
+        }
+
+        return $service['hotel'] === null ? self::UNNAMED : self::OTHER_PLACE;
+    }
+
+    protected function meters(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $x = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+
+        return 6371000 * 2 * asin(min(1, sqrt($x)));
+    }
+}

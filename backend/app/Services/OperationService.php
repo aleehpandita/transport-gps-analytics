@@ -35,8 +35,10 @@ class OperationService
 
     /**
      * @param Collection<int, string> $vehicles Nombre por id, ya filtradas por usuario
+     * @param bool $withReviews false para ver solo lo que supone el GPS, sin confirmaciones
+     *                          (operations:evaluate mide así la precisión automática)
      */
-    public function forDay(string $date, Collection $vehicles): array
+    public function forDay(string $date, Collection $vehicles, bool $withReviews = true): array
     {
         $from = CarbonImmutable::createFromFormat('Y-m-d', $date, self::TIMEZONE)->startOfDay();
         $to = $from->endOfDay();
@@ -57,7 +59,7 @@ class OperationService
         $classifier = new OperationClassifier($this->terminals);
 
         // Confirmaciones de ese día, por "unidad|inicio del viaje"
-        $reviews = TripReview::with('user:id,name')
+        $reviews = !$withReviews ? collect() : TripReview::with('user:id,name')
             ->whereIn('vehicle_id', $vehicles->keys())
             ->whereBetween('trip_started_at', [$from->utc(), $to->utc()])
             ->get()
@@ -147,6 +149,7 @@ class OperationService
             'reasons' => $leg['reasons'],
             'review' => $leg['review'],
             'hotel' => $s['hotel'],
+            'place_id' => $s['place_id'] ?? null,
             'hotel_latitude' => $s['hotel_point'][0],
             'hotel_longitude' => $s['hotel_point'][1],
             'terminal' => in_array($s['type'], ['otro', OperationClassifier::TRANSFER], true) ? null : $this->terminalName($terminal),

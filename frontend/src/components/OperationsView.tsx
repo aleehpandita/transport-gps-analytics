@@ -52,7 +52,7 @@ const SERVICE_TYPE_LABEL: Record<OperationService['type'], string> = {
 const PLACE_TYPES: { id: string; label: string }[] = [
   { id: 'hotel', label: 'Hotel' },
   { id: 'stop', label: 'Punto de pasajeros (estación, muelle, residencial, casa)' },
-  { id: 'other', label: 'Otro, sin pasajeros (gasolinera, espera de choferes)' },
+  { id: 'other', label: 'Otro (gasolinera, espera de choferes)' },
   { id: 'base', label: 'Base o casa del chofer' },
 ]
 
