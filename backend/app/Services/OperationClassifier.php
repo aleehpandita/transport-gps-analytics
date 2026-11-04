@@ -64,6 +64,10 @@ class OperationClassifier
     protected const PICKUP_STAY_MINUTES = 10;
     // Para buscar el hotel de una recogida detrás de las maniobras en la entrada
     protected const PICKUP_AREA_METERS = 1000;
+    // Llegada que se detuvo antes del hotel (caseta, tráfico) y siguió hasta él: se junta
+    // si el tramo que falta es así de corto y arranca así de pronto
+    protected const APPROACH_MAX_KM = 5;
+    protected const APPROACH_MAX_GAP_SECONDS = 900;
     // El aeropuerto es todo lo que esté a esta distancia de una terminal (incluye el punto
     // de encuentro de llegadas y la espera de transportistas)
     protected const AIRPORT_METERS = 1500;
@@ -101,6 +105,7 @@ class OperationClassifier
      */
     public function classify(array $legs): array
     {
+        $legs = $this->mergeApproaches($legs);
         $out = [];
         $n = count($legs);
 
@@ -119,6 +124,7 @@ class OperationClassifier
                     'type' => self::ARRIVAL,
                     'terminal' => $leg['origin']['name'],
                     'hotel' => $leg['destination']['name'],
+                    'place_id' => $leg['destination']['place_id'] ?? null,
                     'hotel_point' => [$leg['destination']['lat'], $leg['destination']['lng']],
                     'left_at' => $leg['start'],      // salió del aeropuerto con los pasajeros
                     'arrived_at' => $leg['end'],     // llegó al hotel
@@ -129,6 +135,7 @@ class OperationClassifier
                 $leg['service'] = [
                     'type' => self::DEPARTURE,
                     'hotel' => $hotelPoint['name'] ?? null,
+                    'place_id' => $hotelPoint['place_id'] ?? null,
                     'hotel_point' => [$hotelPoint['lat'], $hotelPoint['lng']],
                     'terminal' => $leg['destination']['name'],
                     'reached_hotel_at' => $reachedAt, // llegó por los pasajeros
@@ -142,6 +149,7 @@ class OperationClassifier
                 $leg['service'] = [
                     'type' => self::TRANSFER,
                     'hotel' => $leg['destination']['name'],
+                    'place_id' => $leg['destination']['place_id'] ?? null,
                     'hotel_point' => [$leg['destination']['lat'], $leg['destination']['lng']],
                     'terminal' => null,
                     'reached_hotel_at' => $prev ? $prev['end'] : null,
@@ -211,6 +219,44 @@ class OperationClassifier
         }
 
         return self::POSITIONING;
+    }
+
+    /**
+     * Junta una llegada que se detuvo en un punto sin nombre antes del hotel con el tramo
+     * corto que la lleva hasta él. 27 oct: se paró en la caseta de Playacar y 2 min después
+     * siguió 3.8 km hasta Viva Wyndham Maya. 31 oct: 6 min en tráfico y luego 2.6 km hasta
+     * Hyatt Zilara. Sin juntarlas, la llegada quedaba "sin nombre" y lo que seguía se leía
+     * como una salida desde el hotel.
+     *
+     * @param list<array> $legs
+     * @return list<array>
+     */
+    protected function mergeApproaches(array $legs): array
+    {
+        $out = [];
+        $n = count($legs);
+        for ($i = 0; $i < $n; $i++) {
+            $leg = $legs[$i];
+            $next = $legs[$i + 1] ?? null;
+
+            if ($next
+                && ($leg['review'] ?? null) === null && ($next['review'] ?? null) === null
+                && ($leg['destination']['name'] ?? null) === null
+                && $this->isAirport($leg['origin'])
+                && in_array($next['destination']['type'] ?? null, ['hotel', 'stop'], true)
+                && $next['km'] <= self::APPROACH_MAX_KM
+                && $next['start'] - $leg['end'] <= self::APPROACH_MAX_GAP_SECONDS
+                && $this->meters($leg['destination'], $next['origin']) <= self::SAME_SPOT_METERS) {
+                $leg['end'] = $next['end'];
+                $leg['km'] += $next['km'];
+                $leg['destination'] = $next['destination'];
+                $i++;
+            }
+
+            $out[] = $leg;
+        }
+
+        return $out;
     }
 
     /**
