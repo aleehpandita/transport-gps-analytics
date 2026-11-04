@@ -15,6 +15,9 @@ namespace App\Services;
  *   - ok: tipo, hora y lugar correctos
  *   - sin_nombre: tipo y hora correctos, pero el GPS paró en un punto sin nombre
  *   - otro_lugar: tipo y hora correctos, en otro lugar del catálogo
+ *   - otra_hora: mismo tipo y lugar, pero lejos de la hora de la hoja (hasta
+ *     LATE_WINDOW_MINUTES). 3 nov: la hoja decía Moon Palace 17:00 y el GPS recogió a las
+ *     19:15. Es una diferencia entre la hoja y lo que pasó, para revisar con el chofer.
  *   - no_detectado: ningún servicio la explica
  * Y los servicios que no explica ninguna orden: inventados por el GPS.
  *
@@ -25,12 +28,18 @@ class OrderMatcher
     public const OK = 'ok';
     public const UNNAMED = 'sin_nombre';
     public const OTHER_PLACE = 'otro_lugar';
+    public const OTHER_TIME = 'otra_hora';
     public const MISSED = 'no_detectado';
 
     protected const WINDOW_MINUTES = 75;
+    protected const LATE_WINDOW_MINUTES = 240;
     // Un servicio en un punto a esta distancia del lugar de la orden es el mismo lugar
     // (un lobby dado de alta dos veces, la entrada de un complejo)
     protected const SAME_PLACE_METERS = 300;
+
+    public function __construct(protected PlaceNameMatcher $names = new PlaceNameMatcher())
+    {
+    }
 
     /**
      * @param list<array{id: int, vehicle_id: int, time: int, type: string, place_id: ?int,
@@ -50,11 +59,18 @@ class OrderMatcher
                     continue;
                 }
                 $minutes = abs($service['left_at'] - $order['time']) / 60;
-                if ($minutes > self::WINDOW_MINUTES) {
+                if ($minutes > self::LATE_WINDOW_MINUTES) {
                     continue;
                 }
                 $result = $this->placeResult($order, $service);
-                $rank = [self::OK => 0, self::UNNAMED => 1, self::OTHER_PLACE => 2][$result];
+                if ($minutes > self::WINDOW_MINUTES) {
+                    // Lejos de la hora: solo cuenta si es el mismo lugar
+                    if ($result !== self::OK) {
+                        continue;
+                    }
+                    $result = self::OTHER_TIME;
+                }
+                $rank = [self::OK => 0, self::UNNAMED => 1, self::OTHER_PLACE => 2, self::OTHER_TIME => 3][$result];
                 $pairs[] = [$rank, $minutes, $o, $s, $result];
             }
         }
@@ -98,6 +114,13 @@ class OrderMatcher
 
         if ($order['place_lat'] !== null && $service['hotel_latitude'] !== null
             && $this->meters($order['place_lat'], $order['place_lng'], $service['hotel_latitude'], $service['hotel_longitude']) <= self::SAME_PLACE_METERS) {
+            return self::OK;
+        }
+
+        // Mismo nombre aunque sea otra entrada del complejo: "Moon Palace" de la hoja y
+        // "Moon Palace Nizuc lobby" donde se detuvo la unidad
+        if ($service['hotel'] !== null
+            && $this->names->match($order['place_text'], [['id' => 1, 'name' => $service['hotel']]]) === 1) {
             return self::OK;
         }
 

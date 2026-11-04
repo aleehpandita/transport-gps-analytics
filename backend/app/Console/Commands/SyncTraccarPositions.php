@@ -28,6 +28,11 @@ use Illuminate\Support\Facades\DB;
  *      recibe confirmación, y Traccar guarda cada reenvío con un id distinto
  *      (13 % de duplicados en el piloto).
  *
+ * - Se rellena solo: cada unidad arranca desde su última posición guardada (menos una
+ *   hora) si eso es antes que la ventana. Si el servidor o el cron se caen, la siguiente
+ *   corrida trae todo lo que faltó, hasta MAX_BACKFILL_DAYS. 3 nov: el cron de producción
+ *   no se instaló y quedaron 5,651 posiciones sin bajar; con esto no vuelve a pasar.
+ *
  * - Por bloques de --chunk-hours (6 por defecto): pedir 130 h de golpe (2 nov) trajo
  *   ~15 mil posiciones en una sola respuesta y pasó de 128 MB.
  *
@@ -43,12 +48,14 @@ class SyncTraccarPositions extends Command
     protected $description = 'Sincroniza posiciones desde Traccar hacia la tabla positions, sin duplicados';
 
     private const KNOTS_TO_KMH = 1.852;
+    private const MAX_BACKFILL_DAYS = 7;
 
     public function handle(TraccarService $traccar): int
     {
         $hours = max(1, (int) $this->option('hours'));
         $to = CarbonImmutable::now('UTC');
-        $from = $to->subHours($hours);
+        $window = $to->subHours($hours);
+        $oldest = $to->subDays(self::MAX_BACKFILL_DAYS);
 
         $vehicles = Vehicle::where('active', true)->get();
 
@@ -62,6 +69,17 @@ class SyncTraccarPositions extends Command
 
         foreach ($vehicles as $vehicle) {
             $this->info("Sincronizando {$vehicle->name} (traccar_device_id: {$vehicle->traccar_device_id})...");
+
+            // Desde la última posición guardada si hay un hueco más grande que la ventana
+            $from = $window;
+            $last = Position::where('vehicle_id', $vehicle->id)->where('data_source', 'real')->max('device_time');
+            if ($last) {
+                $resume = CarbonImmutable::parse($last, 'UTC')->subHour();
+                if ($resume->lt($from)) {
+                    $from = $resume->max($oldest);
+                    $this->line('  Hueco desde ' . $resume->addHour()->toDateTimeString() . ' UTC: se rellena.');
+                }
+            }
 
             $totals = [0, 0, 0];
 
