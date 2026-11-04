@@ -62,6 +62,10 @@ class OperationClassifier
     // Hilton 6; 31 oct: Almaraza 8) y las recogidas después de posicionarse 15 a 19 min
     // (2 nov: Kempinski, de 12:42 a 12:59; 28 oct: Sunscape, de 18:10 a 18:29).
     protected const PICKUP_STAY_MINUTES = 10;
+    // Entre esto y PICKUP_STAY_MINUTES no se puede saber solo con el GPS: se deja como
+    // llegada pero por confirmar. Medido: dejadas de 1 a 8 min, recogidas de 3 a 25 min;
+    // 31 oct Almaraza (dejada) y 3 nov Temptation (recogida) duraron los dos 8 min.
+    protected const AMBIGUOUS_STAY_MINUTES = 7;
     // Para buscar el hotel de una recogida detrás de las maniobras en la entrada
     protected const PICKUP_AREA_METERS = 1000;
     // Llegada que se detuvo antes del hotel (caseta, tráfico) y siguió hasta él: se junta
@@ -116,7 +120,7 @@ class OperationClassifier
             $next = $legs[$i + 1] ?? null;
 
             $leg['kind'] = $this->kind($leg, $out, $legs, $i);
-            $leg['doubt'] = $this->doubt($leg, $out);
+            $leg['doubt'] = $this->doubt($leg, $out, $legs, $i);
 
             // Datos del servicio
             if ($leg['kind'] === self::ARRIVAL) {
@@ -355,8 +359,20 @@ class OperationClassifier
      *
      * @param list<array> $before
      */
-    protected function doubt(array $leg, array $before): ?string
+    protected function doubt(array $leg, array $before, array $legs, int $i): ?string
     {
+        // Llegada que se quedó en el hotel lo que tarda una dejada larga o una recogida
+        // corta, y luego volvió al aeropuerto
+        if ($leg['kind'] === self::ARRIVAL) {
+            $leaving = $legs[$this->leavingIndex($legs, $i)] ?? null;
+            $stay = $leaving ? $leaving['start'] - $leg['end'] : 0;
+            if ($leaving && $this->isAirport($leaving['destination'])
+                && $stay >= self::AMBIGUOUS_STAY_MINUTES * 60) {
+                return 'Esperó ' . intdiv($stay, 60) . ' min en el hotel y volvió al aeropuerto: '
+                    . 'si dejó pasajeros fue una llegada; si fue vacío a recoger, el viaje siguiente fue la salida';
+            }
+        }
+
         $last = null;
         for ($k = count($before) - 1; $k >= 0; $k--) {
             if ($before[$k]['kind'] !== self::MANEUVER) {
