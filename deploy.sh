@@ -13,7 +13,10 @@ git log --oneline -1
 
 echo "== Backend"
 cd backend
-composer install --no-dev --optimize-autoloader --no-interaction
+# --no-scripts: los scripts de composer escriben en bootstrap/cache, que es de www-data;
+# se corren después como www-data
+composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+sudo -u www-data php artisan package:discover --ansi
 sudo -u www-data php artisan migrate --force
 sudo -u www-data php artisan config:cache
 sudo -u www-data php artisan route:cache
