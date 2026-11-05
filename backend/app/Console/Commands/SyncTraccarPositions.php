@@ -75,8 +75,11 @@ class SyncTraccarPositions extends Command
             $last = Position::where('vehicle_id', $vehicle->id)->where('data_source', 'real')->max('device_time');
             if ($last) {
                 $resume = CarbonImmutable::parse($last, 'UTC')->subHour();
-                if ($resume->lt($from)) {
-                    $from = $resume->max($oldest);
+                // Una unidad sin datos en más de MAX_BACKFILL_DAYS está apagada o sin equipo:
+                // no se le pide una semana a Traccar en cada corrida (4 nov: la tiguan,
+                // sin posiciones desde el 15 oct)
+                if ($resume->lt($from) && $resume->gte($oldest)) {
+                    $from = $resume;
                     $this->line('  Hueco desde ' . $resume->addHour()->toDateTimeString() . ' UTC: se rellena.');
                 }
             }

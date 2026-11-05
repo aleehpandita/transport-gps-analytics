@@ -26,7 +26,9 @@ Artisan::command('inspire', function () {
 |   parada larga sin posiciones nuevas). Umbrales en config/alerts.php.
 */
 
-Schedule::command('traccar:sync-positions')
+// 10 h: cubre el retraso más largo medido (8.4 h). Los huecos más grandes (servidor o
+// cron caídos) los rellena el propio comando desde la última posición guardada.
+Schedule::command('traccar:sync-positions --hours=10')
     ->everyTwoMinutes()
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
