@@ -22,6 +22,12 @@ namespace App\Services;
  *   - no_detectado: ningún servicio la explica
  * Y los servicios que no explica ninguna orden: inventados por el GPS.
  *
+ * Servicios alternativos ('alt' => true): regresos vacíos desde un hotel que, según la
+ * hoja, pudieron ser la salida. El GPS no distingue una recogida rápida de una dejada
+ * (Le Blanc 27 oct, Temptation 3 nov, Oasis Palm 4 nov), pero la hora de la hoja sí:
+ * en una salida coincide con cuando la unidad dejó el hotel, no con cuando dejó el
+ * aeropuerto. Solo cuentan si una orden los explica; si no, no son inventados.
+ *
  * Trabaja sobre arreglos simples para poder probarlo sin base de datos.
  */
 class OrderMatcher
@@ -34,6 +40,8 @@ class OrderMatcher
 
     protected const WINDOW_MINUTES = 75;
     protected const LATE_WINDOW_MINUTES = 240;
+    // Del aeropuerto al hotel para recoger: la "llegada" previa a una salida deducida
+    protected const PICKUP_RUN_MINUTES = 120;
     // Un servicio en un punto a esta distancia del lugar de la orden es el mismo lugar
     // (un lobby dado de alta dos veces, la entrada de un complejo)
     protected const SAME_PLACE_METERS = 300;
@@ -98,9 +106,27 @@ class OrderMatcher
         }
         ksort($results);
 
+        // Si la hoja convirtió un regreso en salida, la "llegada" al mismo hotel justo antes
+        // fue el viaje vacío para recoger: no es un servicio inventado
+        $positioning = [];
+        foreach ($services as $s => $service) {
+            if (empty($service['alt']) || !isset($usedServices[$s])) {
+                continue;
+            }
+            foreach ($services as $p => $before) {
+                if ($before['type'] === 'llegada' && empty($before['alt'])
+                    && $before['vehicle_id'] === $service['vehicle_id']
+                    && $before['left_at'] < $service['left_at']
+                    && $service['left_at'] - $before['left_at'] <= self::PICKUP_RUN_MINUTES * 60
+                    && $before['hotel'] === $service['hotel']) {
+                    $positioning[$p] = true;
+                }
+            }
+        }
+
         $extra = [];
         foreach ($services as $s => $service) {
-            if (!isset($usedServices[$s])) {
+            if (!isset($usedServices[$s]) && empty($service['alt']) && !isset($positioning[$s])) {
                 $extra[] = $service;
             }
         }

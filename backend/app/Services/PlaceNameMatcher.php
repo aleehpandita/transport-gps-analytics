@@ -26,6 +26,10 @@ class PlaceNameMatcher
     protected const TYPO_LETTERS = 1;
     // Mínimo de palabras de la orden que deben coincidir
     protected const MIN_SHARE = 0.5;
+    // Ciudades y zonas: una orden que solo dice "PDC" o "Playa del Carmen" no es un lugar
+    // del catálogo (4 nov: "Playa del Carmen" se emparejaba con el Complejo Princess)
+    protected const ZONES = ['playa', 'carmen', 'pdc', 'tulum', 'puerto', 'morelos', 'aventuras',
+        'centro', 'zona', 'hotelera', 'isla', 'mujeres', 'akumal', 'holbox', 'riviera', 'maya'];
 
     /**
      * @param list<array{id: int, name: string}> $places
@@ -34,7 +38,7 @@ class PlaceNameMatcher
     public function match(string $text, array $places): ?int
     {
         $wanted = $this->words($text);
-        if (!$wanted) {
+        if (!$wanted || !array_diff($wanted, self::ZONES)) {
             return null;
         }
 
