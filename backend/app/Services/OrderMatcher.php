@@ -5,7 +5,8 @@ namespace App\Services;
 /**
  * Compara las órdenes de servicio de un día contra los servicios que detectó el GPS.
  *
- * Cada orden se empareja con a lo más un servicio de la misma unidad y del mismo tipo,
+ * Cada orden se empareja con a lo más un servicio de la misma unidad y del mismo tipo (o
+ * de cualquier tipo si la orden es 'auto': la hoja no lo dice y lo deduce el GPS),
  * dentro de WINDOW_MINUTES de la hora de la orden. La hora que se compara es cuando la
  * unidad arrancó con los pasajeros: en una llegada, cuando salió del aeropuerto; en una
  * salida, cuando salió del hotel. Medido el 2 nov: entre 1 y 8 min de diferencia.
@@ -55,7 +56,8 @@ class OrderMatcher
         $pairs = [];
         foreach ($orders as $o => $order) {
             foreach ($services as $s => $service) {
-                if ($service['vehicle_id'] !== $order['vehicle_id'] || $service['type'] !== $order['type']) {
+                if ($service['vehicle_id'] !== $order['vehicle_id']
+                    || ($order['type'] !== 'auto' && $service['type'] !== $order['type'])) {
                     continue;
                 }
                 $minutes = abs($service['left_at'] - $order['time']) / 60;

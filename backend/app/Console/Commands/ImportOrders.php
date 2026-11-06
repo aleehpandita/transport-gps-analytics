@@ -16,7 +16,8 @@ use Illuminate\Support\Str;
  *   2026-11-02,11:45,Kevs1,salida,Royal Solaris,T2,3,
  *
  * - unidad: parte del nombre de la unidad ("Kevs1")
- * - tipo: llegada, salida o traslado
+ * - tipo: llegada, salida, traslado o vacío. Vacío = el GPS lo deduce (las hojas de Kevs1
+ *   ya no lo traen, y el cliente no tiene por qué escribirlo)
  * - lugar: como viene en la orden; se busca en el catálogo y si no aparece se guarda el
  *   texto igual (el reporte lo marca para darlo de alta)
  * - Sin nombres de pasajeros.
@@ -42,10 +43,19 @@ class ImportOrders extends Command
             return self::FAILURE;
         }
 
-        $rows = array_map('str_getcsv', file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
-        $header = array_map(fn ($h) => Str::lower(trim($h)), array_shift($rows) ?? []);
+        // Sin BOM ni saltos de Windows: Excel y algunos editores los agregan al guardar
+        $content = preg_replace('/^\xEF\xBB\xBF/', '', (string) file_get_contents($path));
+        $lines = array_values(array_filter(preg_split('/\r\n|\r|\n/', $content), fn ($l) => trim($l) !== ''));
+        if (!$lines) {
+            $this->error("El archivo {$path} está vacío.");
+            return self::FAILURE;
+        }
+
+        $rows = array_map('str_getcsv', $lines);
+        $header = array_map(fn ($h) => Str::lower(trim($h)), array_shift($rows));
         if (array_slice($header, 0, 5) !== array_slice(self::COLUMNS, 0, 5)) {
             $this->error('El encabezado debe ser: ' . implode(',', self::COLUMNS));
+            $this->line('Se leyó: ' . implode(',', $header));
             return self::FAILURE;
         }
 
@@ -61,13 +71,13 @@ class ImportOrders extends Command
             $r = array_combine(array_slice(self::COLUMNS, 0, count($row)), $row);
 
             $vehicle = $vehicles->first(fn (Vehicle $v) => Str::contains(Str::lower($v->name), Str::lower($r['unidad'] ?? '')));
-            $type = Str::lower($r['tipo'] ?? '');
+            $type = Str::lower($r['tipo'] ?? '') ?: ServiceOrder::AUTO;
             $date = $r['fecha'] ?? '';
             $time = $r['hora'] ?? '';
 
             $problem = match (true) {
                 !$vehicle => "unidad \"{$r['unidad']}\" no existe",
-                !in_array($type, ServiceOrder::TYPES, true) => "tipo \"{$r['tipo']}\" (usa llegada, salida o traslado)",
+                !in_array($type, ServiceOrder::TYPES, true) => "tipo \"{$r['tipo']}\" (usa llegada, salida, traslado o déjalo vacío)",
                 !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) => "fecha \"{$date}\" (usa AAAA-MM-DD)",
                 !preg_match('/^\d{1,2}:\d{2}$/', $time) => "hora \"{$time}\" (usa HH:MM)",
                 ($r['lugar'] ?? '') === '' => 'falta el lugar',

@@ -67,24 +67,17 @@ class EvaluateOperations extends Command
         $first = CarbonImmutable::parse($this->option('from') ?? $byDate->keys()->first());
         $last = CarbonImmutable::parse($this->option('to') ?? $byDate->keys()->last());
 
-        for ($d = $first; $d->lte($last); $d = $d->addDay()) {
+        // Se compara todo el periodo de una vez (más el día anterior), para que una orden de
+        // las 00:00 encuentre el viaje que salió del aeropuerto a las 23:50 (4 nov, PDC)
+        $orderRows = [];
+        $serviceRows = [];
+        for ($d = $first->subDay(); $d->lte($last); $d = $d->addDay()) {
             $date = $d->format('Y-m-d');
-            $dayOrders = $byDate->get($date, collect());
+            $outside = $d->lt($first);
             $day = $operations->forDay($date, $vehicles, withReviews: false);
 
-            $result = $matcher->match(
-                $dayOrders->map(fn (ServiceOrder $o) => [
-                    'id' => $o->id,
-                    'vehicle_id' => $o->vehicle_id,
-                    'time' => CarbonImmutable::parse("{$date} {$o->scheduled_time}", self::TIMEZONE)->getTimestamp(),
-                    'type' => $o->type,
-                    'place_id' => $o->place_id,
-                    'place_text' => $o->place?->name ?? $o->place_text,
-                    'place_lat' => $o->place ? (float) $o->place->latitude : null,
-                    'place_lng' => $o->place ? (float) $o->place->longitude : null,
-                    'scheduled_time' => $o->scheduled_time,
-                ])->values()->all(),
-                collect($day['services'])->map(fn ($s) => [
+            foreach ($day['services'] as $s) {
+                $serviceRows[] = [
                     'trip_id' => $s['trip_id'],
                     'vehicle_id' => $s['vehicle_id'],
                     'type' => $s['type'],
@@ -94,8 +87,40 @@ class EvaluateOperations extends Command
                     'hotel_latitude' => $s['hotel_latitude'],
                     'hotel_longitude' => $s['hotel_longitude'],
                     'status' => $s['status'],
-                ])->values()->all()
-            );
+                    'day' => $date,
+                    'outside' => $outside,
+                ];
+            }
+
+            if ($outside) {
+                continue;
+            }
+            foreach ($byDate->get($date, collect()) as $o) {
+                $orderRows[] = [
+                    'id' => $o->id,
+                    'vehicle_id' => $o->vehicle_id,
+                    'time' => CarbonImmutable::parse("{$date} {$o->scheduled_time}", self::TIMEZONE)->getTimestamp(),
+                    'type' => $o->type,
+                    'place_id' => $o->place_id,
+                    'place_text' => $o->place?->name ?? $o->place_text,
+                    'place_lat' => $o->place ? (float) $o->place->latitude : null,
+                    'place_lng' => $o->place ? (float) $o->place->longitude : null,
+                    'scheduled_time' => $o->scheduled_time,
+                    'day' => $date,
+                ];
+            }
+        }
+
+        $all = $matcher->match($orderRows, $serviceRows);
+        $ordersByDay = collect($all['orders'])->groupBy('day');
+        $extraByDay = collect($all['extra'])->where('outside', false)->groupBy('day');
+
+        for ($d = $first; $d->lte($last); $d = $d->addDay()) {
+            $date = $d->format('Y-m-d');
+            $result = [
+                'orders' => $ordersByDay->get($date, collect())->all(),
+                'extra' => $extraByDay->get($date, collect())->all(),
+            ];
 
             $count = array_fill_keys(array_keys(self::LABELS), 0);
             $auto = 0;
@@ -150,15 +175,17 @@ class EvaluateOperations extends Command
     {
         $lines = [];
         foreach ($result['orders'] as $o) {
-            if ($o['result'] === OrderMatcher::OK && $o['service']['status'] === 'probable') {
+            $auto = $o['type'] === ServiceOrder::AUTO;
+            if ($o['result'] === OrderMatcher::OK && $o['service']['status'] === 'probable' && !$auto) {
                 continue;
             }
             $s = $o['service'];
             $lines[] = sprintf(
                 '  %s %-8s %-30s %s%s',
-                $o['scheduled_time'], $o['type'], mb_strimwidth($o['place_text'], 0, 30, '…'),
+                $o['scheduled_time'], $auto ? '?' : $o['type'], mb_strimwidth($o['place_text'], 0, 30, '…'),
                 self::LABELS[$o['result']],
-                $s ? sprintf(' (GPS: %s, %s, %+d min, %s)', $this->hm($s['left_at']), $s['hotel'] ?? 'sin nombre', $o['minutes'], $s['status']) : ''
+                $s ? sprintf(' (GPS: %s%s, %s, %s, %+d min, %s)',
+                    $auto ? 'fue ' : '', $s['type'], $this->hm($s['left_at']), $s['hotel'] ?? 'sin nombre', $o['minutes'], $s['status']) : ''
             );
         }
         foreach ($result['extra'] as $s) {
