@@ -10,7 +10,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ServiceOrder extends Model
 {
-    public const TYPES = ['llegada', 'salida', 'traslado'];
+    // auto: la hoja no dice si fue llegada o salida; lo deduce el GPS al compararla
+    public const AUTO = 'auto';
+    public const TYPES = ['llegada', 'salida', 'traslado', self::AUTO];
 
     protected $fillable = [
         'vehicle_id', 'service_date', 'scheduled_time', 'type', 'place_id', 'place_text',
