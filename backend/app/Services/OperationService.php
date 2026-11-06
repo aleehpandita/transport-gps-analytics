@@ -178,6 +178,10 @@ class OperationService
             'km' => round($leg['km'], 1),
             'origin' => $leg['origin']['name'],
             'destination' => $leg['destination']['name'],
+            // Para cruzar contra las hojas: un regreso puede haber sido la salida
+            'origin_place_id' => $leg['origin']['place_id'] ?? null,
+            'origin_latitude' => $leg['origin']['lat'],
+            'origin_longitude' => $leg['origin']['lng'],
         ];
     }
 

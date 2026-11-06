@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\ServiceOrder;
 use App\Models\Vehicle;
+use App\Services\OperationClassifier;
 use App\Services\OperationService;
 use App\Services\OrderMatcher;
 use Carbon\CarbonImmutable;
@@ -75,6 +76,27 @@ class EvaluateOperations extends Command
             $date = $d->format('Y-m-d');
             $outside = $d->lt($first);
             $day = $operations->forDay($date, $vehicles, withReviews: false);
+
+            // Regresos desde un hotel: con la hoja pueden resultar la salida (ver OrderMatcher)
+            foreach ($day['legs'] as $l) {
+                if ($l['kind'] !== OperationClassifier::RETURN) {
+                    continue;
+                }
+                $serviceRows[] = [
+                    'trip_id' => $l['trip_id'],
+                    'vehicle_id' => $l['vehicle_id'],
+                    'type' => 'salida',
+                    'left_at' => CarbonImmutable::parse($l['started_at'])->getTimestamp(),
+                    'place_id' => $l['origin_place_id'],
+                    'hotel' => $l['origin'],
+                    'hotel_latitude' => $l['origin_latitude'],
+                    'hotel_longitude' => $l['origin_longitude'],
+                    'status' => 'por_confirmar',
+                    'alt' => true,
+                    'day' => $date,
+                    'outside' => $outside,
+                ];
+            }
 
             foreach ($day['services'] as $s) {
                 $serviceRows[] = [
@@ -184,8 +206,9 @@ class EvaluateOperations extends Command
                 '  %s %-8s %-30s %s%s',
                 $o['scheduled_time'], $auto ? '?' : $o['type'], mb_strimwidth($o['place_text'], 0, 30, '…'),
                 self::LABELS[$o['result']],
-                $s ? sprintf(' (GPS: %s%s, %s, %s, %+d min, %s)',
-                    $auto ? 'fue ' : '', $s['type'], $this->hm($s['left_at']), $s['hotel'] ?? 'sin nombre', $o['minutes'], $s['status']) : ''
+                $s ? sprintf(' (GPS: %s%s%s, %s, %s, %+d min, %s)',
+                    $auto ? 'fue ' : '', $s['type'], !empty($s['alt']) ? ' [el GPS lo vio como regreso; la hora de la hoja dice salida]' : '',
+                    $this->hm($s['left_at']), $s['hotel'] ?? 'sin nombre', $o['minutes'], $s['status']) : ''
             );
         }
         foreach ($result['extra'] as $s) {
