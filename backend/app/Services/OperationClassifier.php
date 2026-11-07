@@ -135,7 +135,7 @@ class OperationClassifier
                     'stay_seconds' => $next ? $next['start'] - $leg['end'] : null,
                 ];
             } elseif ($leg['kind'] === self::DEPARTURE) {
-                [$hotelPoint, $reachedAt] = $this->pickupPoint($leg, $out);
+                [$hotelPoint, $reachedAt, $otherPoint] = $this->pickupPoint($leg, $out) + [2 => null];
                 $leg['service'] = [
                     'type' => self::DEPARTURE,
                     'hotel' => $hotelPoint['name'] ?? null,
@@ -143,6 +143,8 @@ class OperationClassifier
                     'hotel_point' => [$hotelPoint['lat'], $hotelPoint['lng']],
                     'terminal' => $leg['destination']['name'],
                     'reached_hotel_at' => $reachedAt, // llegó por los pasajeros
+                    // Otro hotel donde se detuvo justo antes: la recogida pudo ser ahí
+                    'other_hotel' => $otherPoint['name'] ?? null,
                     'left_at' => $leg['start'],
                     'arrived_at' => $leg['end'],     // llegó al aeropuerto
                     'wait_seconds' => $reachedAt !== null ? $leg['start'] - $reachedAt : null,
@@ -306,9 +308,12 @@ class OperationClassifier
             // Si la salida arranca en otro lugar con nombre, ése es el hotel: la parada de
             // antes fue en otro sitio (5 nov: llegó vacía a Ocean Dream, se movió 870 m y
             // recogió en Riu Palace Las Américas)
+            // Con el puro GPS no se sabe en cuál de los dos subieron (28 oct: esperó en
+            // Sunscape y luego junto al NYX, y fue Sunscape): se queda la salida desde donde
+            // arrancó y el otro hotel va como alternativa, por confirmar
             if ($originName !== null && ($point['name'] ?? null) !== null && $point['name'] !== $originName) {
                 $prev = end($before);
-                return [$leg['origin'], $this->meters($prev['destination'], $leg['origin']) <= self::SAME_SPOT_METERS ? $prev['end'] : null];
+                return [$leg['origin'], $this->meters($prev['destination'], $leg['origin']) <= self::SAME_SPOT_METERS ? $prev['end'] : null, $point];
             }
             // El nombre del hotel manda sobre el punto sin nombre de la salida al bulevar
             if (($point['name'] ?? null) === null && $originName !== null) {
@@ -427,6 +432,9 @@ class OperationClassifier
         }
         if ($leg['service']['hotel'] === null) {
             $reasons[] = 'Punto sin nombre: puede ser un hotel nuevo, una casa o una parada del chofer';
+        }
+        if (($leg['service']['other_hotel'] ?? null) !== null) {
+            $reasons[] = 'Antes se detuvo en ' . $leg['service']['other_hotel'] . ': los pasajeros pudieron subir ahí';
         }
         if ($leg['kind'] === self::DEPARTURE) {
             $wait = $leg['service']['wait_seconds'];
