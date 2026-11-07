@@ -152,6 +152,12 @@ class OrderMatcher
             return self::OK;
         }
 
+        // El otro hotel donde se detuvo justo antes de la salida (ver OperationClassifier)
+        if (($service['other_hotel'] ?? null) !== null
+            && $this->names->match($order['place_text'], [['id' => 1, 'name' => $service['other_hotel']]]) === 1) {
+            return self::OK;
+        }
+
         return $service['hotel'] === null ? self::UNNAMED : self::OTHER_PLACE;
     }
 

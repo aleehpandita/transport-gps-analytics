@@ -150,6 +150,7 @@ class OperationService
             'review' => $leg['review'],
             'hotel' => $s['hotel'],
             'place_id' => $s['place_id'] ?? null,
+            'other_hotel' => $s['other_hotel'] ?? null,
             'hotel_latitude' => $s['hotel_point'][0],
             'hotel_longitude' => $s['hotel_point'][1],
             'terminal' => in_array($s['type'], ['otro', OperationClassifier::TRANSFER], true) ? null : $this->terminalName($terminal),

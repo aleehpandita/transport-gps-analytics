@@ -106,6 +106,7 @@ class EvaluateOperations extends Command
                     'left_at' => CarbonImmutable::parse($s['left_at'])->getTimestamp(),
                     'place_id' => $s['place_id'],
                     'hotel' => $s['hotel'],
+                    'other_hotel' => $s['other_hotel'] ?? null,
                     'hotel_latitude' => $s['hotel_latitude'],
                     'hotel_longitude' => $s['hotel_longitude'],
                     'status' => $s['status'],

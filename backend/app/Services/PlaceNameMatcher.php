@@ -53,7 +53,7 @@ class PlaceNameMatcher
             }
             $hits = 0;
             $strong = false;
-            foreach ($wanted as $w) {
+            foreach (array_diff($wanted, self::ZONES) as $w) {
                 if ($this->explains($w, $words)) {
                     $hits++;
                     $strong = $strong || (strlen($w) >= 3 && !in_array($w, self::ZONES, true) && $this->fullMatch($w, $words));
@@ -62,7 +62,9 @@ class PlaceNameMatcher
             if (!$strong) {
                 continue;
             }
-            $share = $hits / count($wanted);
+            // Las palabras de zona no cuentan para la proporción: "Aloft Zona Hotelera" se
+            // decide por "Aloft"
+            $share = $hits / max(1, count(array_diff($wanted, self::ZONES)));
             if ($share >= self::MIN_SHARE) {
                 // Desempate: el que tenga menos palabras de sobra ("Moon Palace" es Moon
                 // Palace Lobby y no Moon Palace Nizuc)
