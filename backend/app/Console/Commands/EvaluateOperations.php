@@ -38,6 +38,7 @@ class EvaluateOperations extends Command
         OrderMatcher::UNNAMED => 'detectado, punto sin nombre',
         OrderMatcher::OTHER_PLACE => 'detectado en otro lugar',
         OrderMatcher::OTHER_TIME => 'detectado a otra hora, revisar con el chofer',
+        OrderMatcher::NO_SHOW => 'no-show (la unidad fue y esperó)',
         OrderMatcher::MISSED => 'NO DETECTADO',
     ];
 
@@ -158,7 +159,7 @@ class EvaluateOperations extends Command
 
             $rows[] = [
                 $date, count($result['orders']), $count[OrderMatcher::OK], $count[OrderMatcher::UNNAMED],
-                $count[OrderMatcher::OTHER_PLACE], $count[OrderMatcher::OTHER_TIME], $count[OrderMatcher::MISSED], $auto,
+                $count[OrderMatcher::OTHER_PLACE], $count[OrderMatcher::OTHER_TIME], $count[OrderMatcher::NO_SHOW], $count[OrderMatcher::MISSED], $auto,
                 count($result['extra']) . ($extraProbable ? " ({$extraProbable} probables)" : ''),
             ];
 
@@ -177,15 +178,20 @@ class EvaluateOperations extends Command
 
         $this->newLine();
         $this->table(
-            ['Día', 'Órdenes', 'Correctos', 'Sin nombre', 'Otro lugar', 'Otra hora', 'No detectados', 'Solos (sin confirmar)', 'Inventados'],
+            ['Día', 'Órdenes', 'Correctos', 'Sin nombre', 'Otro lugar', 'Otra hora', 'No-show', 'No detectados', 'Solos (sin confirmar)', 'Inventados'],
             $rows
         );
 
         $n = max(1, $totals['orders']);
-        $detected = $totals[OrderMatcher::OK] + $totals[OrderMatcher::UNNAMED] + $totals[OrderMatcher::OTHER_PLACE] + $totals[OrderMatcher::OTHER_TIME];
+        // Un no-show bien detectado cuenta: el GPS explicó qué pasó con esa orden
+        $detected = $totals[OrderMatcher::OK] + $totals[OrderMatcher::UNNAMED] + $totals[OrderMatcher::OTHER_PLACE]
+            + $totals[OrderMatcher::OTHER_TIME] + $totals[OrderMatcher::NO_SHOW];
         $this->line(sprintf('Detectados:            %3d de %d (%.0f%%)', $detected, $totals['orders'], 100 * $detected / $n));
         $this->line(sprintf('Correctos con lugar:   %3d de %d (%.0f%%)', $totals[OrderMatcher::OK], $totals['orders'], 100 * $totals[OrderMatcher::OK] / $n));
         $this->line(sprintf('Resueltos solos:       %3d de %d (%.0f%%)  correctos y sin nada que confirmar', $totals['auto'], $totals['orders'], 100 * $totals['auto'] / $n));
+        if ($totals[OrderMatcher::NO_SHOW]) {
+            $this->line(sprintf('No-shows:              %3d detectado(s) por el GPS (fue, esperó y no fue al aeropuerto)', $totals[OrderMatcher::NO_SHOW]));
+        }
         if ($totals[OrderMatcher::OTHER_TIME]) {
             $this->line(sprintf('Hoja vs GPS:           %3d servicio(s) a otra hora de la que dice la hoja', $totals[OrderMatcher::OTHER_TIME]));
         }
