@@ -45,6 +45,7 @@ const SERVICE_TYPE_LABEL: Record<OperationService['type'], string> = {
   llegada: 'Llegada',
   salida: 'Salida',
   traslado: 'Traslado',
+  no_show: 'Posible no-show',
   otro: 'Otro',
 }
 
@@ -390,7 +391,7 @@ function ServicesTable({
                   className={`align-top hover:bg-surface-raised/60 ${s.status === 'por_confirmar' && !s.review ? 'bg-risk/5' : ''}`}
                 >
                   <td className="px-3 py-2 tabular-nums whitespace-nowrap">{formatClock(s.left_at)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{SERVICE_TYPE_LABEL[s.type]}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{s.type === 'no_show' && s.status === 'confirmado' ? 'No-show' : SERVICE_TYPE_LABEL[s.type]}</td>
                   <td className="px-3 py-2">
                     <StatusBadge status={s.status} review={s.review} />
                   </td>
@@ -458,6 +459,10 @@ function detail(s: OperationService): string {
   const drive = formatDuration(toTimestamp(s.arrived_at) - toTimestamp(s.left_at))
   if (s.type === 'otro') {
     return `Viaje de ${formatClock(s.left_at)} a ${formatClock(s.arrived_at)} (${drive}), marcado como servicio`
+  }
+  if (s.type === 'no_show') {
+    const waited = s.wait_seconds !== null ? formatDuration(s.wait_seconds) : ''
+    return `Llegó al hotel ${formatClock(s.left_at)}, esperó ${waited} y se fue ${formatClock(s.arrived_at)} sin ir al aeropuerto`
   }
   if (s.type === 'traslado') {
     const waited = s.wait_seconds !== null ? `esperó ${formatDuration(s.wait_seconds)}; ` : ''

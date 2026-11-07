@@ -38,6 +38,8 @@ class OperationClassifier
     // Entre dos puntos de pasajeros sin pasar por el aeropuerto (29 oct: de Chiquilá a
     // Villa del Palmar). Puede ser un traslado o la unidad yendo vacía de un lado a otro.
     public const TRANSFER = 'traslado';
+    // Fue por pasajeros que no se presentaron (sospecha del GPS o marcado por una persona)
+    public const NO_SHOW = 'no_show';
 
     public const WITH_PASSENGERS = [self::ARRIVAL, self::DEPARTURE];
 
@@ -66,6 +68,9 @@ class OperationClassifier
     // llegada pero por confirmar. Medido: dejadas de 1 a 8 min, recogidas de 3 a 25 min;
     // 31 oct Almaraza (dejada) y 3 nov Temptation (recogida) duraron los dos 8 min.
     protected const AMBIGUOUS_STAY_MINUTES = 7;
+    // Posible no-show: esperó al menos esto en un hotel y de ahí no fue al aeropuerto.
+    // 6 nov: 29 min en el Fairfield y se fue al Grand Oasis (Kevin confirmó no-show).
+    protected const NO_SHOW_WAIT_MINUTES = 15;
     // Para buscar el hotel de una recogida detrás de las maniobras en la entrada
     protected const PICKUP_AREA_METERS = 1000;
     // Llegada que se detuvo antes del hotel (caseta, tráfico) y siguió hasta él: se junta
@@ -169,7 +174,7 @@ class OperationClassifier
             $out[] = $leg;
         }
 
-        return $out;
+        return $this->markNoShows($out);
     }
 
     /**
@@ -225,6 +230,71 @@ class OperationClassifier
         }
 
         return self::POSITIONING;
+    }
+
+    /**
+     * Marca los posibles no-shows: la unidad llegó vacía a un hotel (posicionamiento),
+     * esperó NO_SHOW_WAIT_MINUTES o más y de ahí no salió hacia el aeropuerto, sino a otro
+     * lado. Las maniobras cortas en la zona no cuentan como irse (5 nov: esperó en Ocean
+     * Dream, se movió 870 m al Riu y de ahí salió al aeropuerto: no es no-show).
+     *
+     * Solo en hoteles y puntos de pasajeros del catálogo: en un punto sin nombre la espera
+     * suele ser el chofer haciendo tiempo (6 nov: 51 min en el centro antes de Ocean View).
+     * No cambia el tipo del viaje: le agrega un servicio de tipo no_show (la constancia:
+     * llegada, espera y salida) y lo deja por confirmar. Si alguien ya lo marcó como
+     * no-show, la constancia se queda y sale confirmado.
+     *
+     * @param list<array> $legs Ya clasificados
+     * @return list<array>
+     */
+    protected function markNoShows(array $legs): array
+    {
+        $n = count($legs);
+        for ($i = 0; $i < $n; $i++) {
+            $leg = $legs[$i];
+            $legs[$i]['no_show'] = null;
+            $review = $leg['review']['status'] ?? null;
+
+            if ($leg['kind'] !== self::POSITIONING
+                || !in_array($leg['destination']['type'] ?? null, ['hotel', 'stop'], true)
+                || !in_array($review, [null, self::REVIEW_NO_SHOW], true)) {
+                continue;
+            }
+
+            $next = $legs[$i + 1] ?? null;
+            $leaving = $legs[$this->leavingIndex($legs, $i)] ?? null;
+            if (!$next || !$leaving) {
+                continue; // fin del día: no hay cómo saber
+            }
+
+            // La espera es hasta que se movió por primera vez (6 nov: 10:14 a 10:46)
+            $wait = $next['start'] - $leg['end'];
+            if ($review === null
+                && ($wait < self::NO_SHOW_WAIT_MINUTES * 60 || $this->isAirport($leaving['destination']))) {
+                continue;
+            }
+
+            $legs[$i]['no_show'] = true;
+            $legs[$i]['service'] = [
+                'type' => self::NO_SHOW,
+                'hotel' => $leg['destination']['name'],
+                'place_id' => $leg['destination']['place_id'] ?? null,
+                'hotel_point' => [$leg['destination']['lat'], $leg['destination']['lng']],
+                'terminal' => null,
+                'reached_hotel_at' => $leg['end'],  // llegó al hotel
+                'left_at' => $leg['end'],
+                'arrived_at' => $next['start'],     // se fue sin pasajeros
+                'wait_seconds' => $wait,
+            ];
+            $legs[$i]['with_passengers'] = false;
+            if ($review === null) {
+                $legs[$i]['status'] = self::PENDING;
+                $legs[$i]['reasons'] = ['Posible no-show: esperó ' . intdiv($wait, 60) . ' min en '
+                    . $leg['destination']['name'] . ' y de ahí no fue al aeropuerto'];
+            }
+        }
+
+        return $legs;
     }
 
     /**
@@ -324,6 +394,12 @@ class OperationClassifier
 
         $prev = end($before) ?: null;
         if ($prev && $this->meters($prev['destination'], $leg['origin']) <= self::SAME_SPOT_METERS) {
+            // Esperó en un hotel y el viaje arrancó ya en el bulevar, frente a otro: el hotel
+            // es donde esperó (27 oct: esperó en Coral Beach y arrancó frente al Aloft, 160 m)
+            if (in_array($prev['destination']['type'] ?? null, ['hotel', 'stop'], true)
+                && ($prev['destination']['name'] ?? null) !== ($leg['origin']['name'] ?? null)) {
+                return [$prev['destination'], $prev['end']];
+            }
             return [$leg['origin'], $prev['end']];
         }
 

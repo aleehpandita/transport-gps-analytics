@@ -91,7 +91,8 @@ class OperationService
 
         // Servicios: los que detectó el GPS y los viajes que alguien marcó como servicio
         $services = collect($legs)
-            ->filter(fn ($l) => isset($l['service']) || ($l['review']['status'] ?? null) === OperationClassifier::REVIEW_SERVICE)
+            ->filter(fn ($l) => isset($l['service'])
+                || in_array($l['review']['status'] ?? null, [OperationClassifier::REVIEW_SERVICE, OperationClassifier::REVIEW_NO_SHOW], true))
             ->values();
 
         return [
@@ -130,7 +131,8 @@ class OperationService
     {
         // Un viaje que el GPS no tomó como servicio pero alguien marcó como tal
         $s = $leg['service'] ?? [
-            'type' => 'otro',
+            // Marcado a mano: servicio u otro no-show que el GPS no sospechó
+            'type' => ($leg['review']['status'] ?? null) === OperationClassifier::REVIEW_NO_SHOW ? OperationClassifier::NO_SHOW : 'otro',
             'hotel' => $leg['destination']['name'],
             'hotel_point' => [$leg['destination']['lat'], $leg['destination']['lng']],
             'terminal' => null,
@@ -153,7 +155,7 @@ class OperationService
             'other_hotel' => $s['other_hotel'] ?? null,
             'hotel_latitude' => $s['hotel_point'][0],
             'hotel_longitude' => $s['hotel_point'][1],
-            'terminal' => in_array($s['type'], ['otro', OperationClassifier::TRANSFER], true) ? null : $this->terminalName($terminal),
+            'terminal' => in_array($s['type'], ['otro', OperationClassifier::TRANSFER, OperationClassifier::NO_SHOW], true) ? null : $this->terminalName($terminal),
             // Llegada: reached_hotel_at es null. Salida: cuándo llegó por los pasajeros.
             'reached_hotel_at' => isset($s['reached_hotel_at']) ? $this->iso($s['reached_hotel_at']) : null,
             'left_at' => $this->iso($s['left_at']),

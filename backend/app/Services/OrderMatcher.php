@@ -19,6 +19,8 @@ namespace App\Services;
  *   - otra_hora: mismo tipo y lugar, pero lejos de la hora de la hoja (hasta
  *     LATE_WINDOW_MINUTES). 3 nov: la hoja decía Moon Palace 17:00 y el GPS recogió a las
  *     19:15. Es una diferencia entre la hoja y lo que pasó, para revisar con el chofer.
+ *   - no_show: el GPS sospecha (o alguien marcó) que la unidad fue y nadie se presentó.
+ *     6 nov, Fairfield: 29 min de espera y se fue a otro hotel.
  *   - no_detectado: ningún servicio la explica
  * Y los servicios que no explica ninguna orden: inventados por el GPS.
  *
@@ -36,6 +38,7 @@ class OrderMatcher
     public const UNNAMED = 'sin_nombre';
     public const OTHER_PLACE = 'otro_lugar';
     public const OTHER_TIME = 'otra_hora';
+    public const NO_SHOW = 'no_show';
     public const MISSED = 'no_detectado';
 
     protected const WINDOW_MINUTES = 75;
@@ -64,8 +67,10 @@ class OrderMatcher
         $pairs = [];
         foreach ($orders as $o => $order) {
             foreach ($services as $s => $service) {
+                $isNoShow = $service['type'] === 'no_show';
                 if ($service['vehicle_id'] !== $order['vehicle_id']
-                    || ($order['type'] !== 'auto' && $service['type'] !== $order['type'])) {
+                    || ($isNoShow && !in_array($order['type'], ['auto', 'salida'], true))
+                    || (!$isNoShow && $order['type'] !== 'auto' && $service['type'] !== $order['type'])) {
                     continue;
                 }
                 $minutes = abs($service['left_at'] - $order['time']) / 60;
@@ -73,14 +78,20 @@ class OrderMatcher
                     continue;
                 }
                 $result = $this->placeResult($order, $service);
-                if ($minutes > self::WINDOW_MINUTES) {
+                if ($isNoShow) {
+                    // Solo en el mismo hotel y cerca de la hora: es la constancia de esa orden
+                    if ($result !== self::OK || $minutes > self::WINDOW_MINUTES) {
+                        continue;
+                    }
+                    $result = self::NO_SHOW;
+                } elseif ($minutes > self::WINDOW_MINUTES) {
                     // Lejos de la hora: solo cuenta si es el mismo lugar
                     if ($result !== self::OK) {
                         continue;
                     }
                     $result = self::OTHER_TIME;
                 }
-                $rank = [self::OK => 0, self::UNNAMED => 1, self::OTHER_PLACE => 2, self::OTHER_TIME => 3][$result];
+                $rank = [self::OK => 0, self::UNNAMED => 1, self::OTHER_PLACE => 2, self::OTHER_TIME => 3, self::NO_SHOW => 4][$result];
                 $pairs[] = [$rank, $minutes, $o, $s, $result];
             }
         }
@@ -140,7 +151,10 @@ class OrderMatcher
             return self::OK;
         }
 
-        if ($order['place_lat'] !== null && $service['hotel_latitude'] !== null
+        // Por cercanía solo si el GPS no le puso otro nombre: un hotel vecino con nombre
+        // propio es otro lugar (Aloft y Coral Beach están a 160 m; contarlo como correcto
+        // escondía que el panel decía Aloft)
+        if ($service['hotel'] === null && $order['place_lat'] !== null && $service['hotel_latitude'] !== null
             && $this->meters($order['place_lat'], $order['place_lng'], $service['hotel_latitude'], $service['hotel_longitude']) <= self::SAME_PLACE_METERS) {
             return self::OK;
         }

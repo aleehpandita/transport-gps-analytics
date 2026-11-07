@@ -252,7 +252,8 @@ export interface OperationService {
   trip_id: number
   vehicle_id: number
   vehicle: string
-  type: 'llegada' | 'salida' | 'traslado' | 'otro' // traslado: entre dos puntos sin aeropuerto; otro: marcado a mano
+  // traslado: entre dos puntos sin aeropuerto; otro: marcado a mano; no_show: fue, esperó y no fue al aeropuerto
+  type: 'llegada' | 'salida' | 'traslado' | 'no_show' | 'otro'
   status: ServiceStatus
   reasons: string[]
   review: TripReview | null
