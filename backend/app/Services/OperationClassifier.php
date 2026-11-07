@@ -302,8 +302,16 @@ class OperationClassifier
             && !$this->isAirport($before[$k]['destination'])
             && $this->meters($before[$k]['destination'], $leg['origin']) <= self::PICKUP_AREA_METERS) {
             $point = $before[$k]['destination'];
+            $originName = $leg['origin']['name'] ?? null;
+            // Si la salida arranca en otro lugar con nombre, ése es el hotel: la parada de
+            // antes fue en otro sitio (5 nov: llegó vacía a Ocean Dream, se movió 870 m y
+            // recogió en Riu Palace Las Américas)
+            if ($originName !== null && ($point['name'] ?? null) !== null && $point['name'] !== $originName) {
+                $prev = end($before);
+                return [$leg['origin'], $this->meters($prev['destination'], $leg['origin']) <= self::SAME_SPOT_METERS ? $prev['end'] : null];
+            }
             // El nombre del hotel manda sobre el punto sin nombre de la salida al bulevar
-            if (($point['name'] ?? null) === null && ($leg['origin']['name'] ?? null) !== null) {
+            if (($point['name'] ?? null) === null && $originName !== null) {
                 $point = $leg['origin'];
             }
             return [$point, $before[$k]['end']];
