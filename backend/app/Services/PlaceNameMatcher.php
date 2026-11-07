@@ -62,13 +62,21 @@ class PlaceNameMatcher
             if (!$strong) {
                 continue;
             }
+            // Las de zona desempatan: "Secrets Playa Mujeres" es Secrets Playa Mujeres y
+            // no Secrets The Vine, aunque los dos tengan "Secrets"
+            $zoneHits = 0;
+            foreach (array_intersect($wanted, self::ZONES) as $w) {
+                if ($this->fullMatch($w, $words)) {
+                    $zoneHits++;
+                }
+            }
             // Las palabras de zona no cuentan para la proporción: "Aloft Zona Hotelera" se
             // decide por "Aloft"
             $share = $hits / max(1, count(array_diff($wanted, self::ZONES)));
             if ($share >= self::MIN_SHARE) {
                 // Desempate: el que tenga menos palabras de sobra ("Moon Palace" es Moon
                 // Palace Lobby y no Moon Palace Nizuc)
-                $scores[] = [$share, -count($words), $place['id']];
+                $scores[] = [$share, $zoneHits, -count($words), $place['id']];
             }
         }
 
@@ -76,11 +84,12 @@ class PlaceNameMatcher
             return null;
         }
         rsort($scores);
-        if (isset($scores[1]) && abs($scores[1][0] - $scores[0][0]) < 1e-9 && $scores[1][1] === $scores[0][1]) {
+        if (isset($scores[1]) && abs($scores[1][0] - $scores[0][0]) < 1e-9
+            && $scores[1][1] === $scores[0][1] && $scores[1][2] === $scores[0][2]) {
             return null;
         }
 
-        return $scores[0][2];
+        return $scores[0][3];
     }
 
     /**
