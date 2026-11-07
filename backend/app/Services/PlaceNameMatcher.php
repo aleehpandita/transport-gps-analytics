@@ -12,7 +12,10 @@ namespace App\Services;
  *
  * Cada palabra de la orden cuenta si coincide con una del lugar: igual, con hasta
  * TYPO_LETTERS letras distintas (palabras de 5 letras o más), como inicial ("P." de
- * Puerto) o como iniciales de palabras seguidas ("MC" de Mar Caribe). Gana el lugar que
+ * Puerto) o como iniciales de palabras seguidas ("MC" de Mar Caribe). Al menos una palabra
+ * de la orden que no sea de zona tiene que coincidir completa o con un error de dedo: las
+ * iniciales y las zonas solas no bastan (5 nov: "SIS PM" se iba a Naay Puerto Morelos por
+ * "PM", e "Iberostar Riviera Cancún" a Haven Riviera Cancún por "Riviera"). Gana el lugar que
  * explica una parte mayor de las palabras de la orden; si dos empatan, no se elige
  * ninguno (mejor marcarlo para revisar que adivinar): "Riu" solo puede ser Riu Caribe o
  * Riu Yucatán.
@@ -49,14 +52,21 @@ class PlaceNameMatcher
                 continue;
             }
             $hits = 0;
+            $strong = false;
             foreach ($wanted as $w) {
                 if ($this->explains($w, $words)) {
                     $hits++;
+                    $strong = $strong || (strlen($w) >= 3 && !in_array($w, self::ZONES, true) && $this->fullMatch($w, $words));
                 }
+            }
+            if (!$strong) {
+                continue;
             }
             $share = $hits / count($wanted);
             if ($share >= self::MIN_SHARE) {
-                $scores[] = [$share, $place['id']];
+                // Desempate: el que tenga menos palabras de sobra ("Moon Palace" es Moon
+                // Palace Lobby y no Moon Palace Nizuc)
+                $scores[] = [$share, -count($words), $place['id']];
             }
         }
 
@@ -64,11 +74,27 @@ class PlaceNameMatcher
             return null;
         }
         rsort($scores);
-        if (isset($scores[1]) && abs($scores[1][0] - $scores[0][0]) < 1e-9) {
+        if (isset($scores[1]) && abs($scores[1][0] - $scores[0][0]) < 1e-9 && $scores[1][1] === $scores[0][1]) {
             return null;
         }
 
-        return $scores[0][1];
+        return $scores[0][2];
+    }
+
+    /**
+     * La palabra aparece completa en el lugar, o con hasta TYPO_LETTERS letras distintas.
+     *
+     * @param list<string> $words
+     */
+    protected function fullMatch(string $w, array $words): bool
+    {
+        foreach ($words as $word) {
+            if ($w === $word || (strlen($w) >= 5 && strlen($word) >= 5 && levenshtein($w, $word) <= self::TYPO_LETTERS)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
