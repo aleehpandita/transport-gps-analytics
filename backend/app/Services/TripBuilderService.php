@@ -176,14 +176,26 @@ class TripBuilderService
      * Procesa las posiciones de un vehículo en un rango de tiempo y crea los trips detectados.
      * Solo usa posiciones con valid = true.
      *
-     * Si un viaje ya guardado empezó antes de $from y sigue abierto en $from, el rango se
-     * extiende hasta su inicio. Así el viaje se recalcula completo y no aparece una versión
-     * cortada que empiece justo en $from.
+     * El rango se extiende hacia atrás hasta el inicio del último viaje guardado que empezó
+     * antes de $from (siga abierto o no). Así:
+     *   - un viaje abierto en $from se recalcula completo y no aparece cortado;
+     *   - el arranque conoce dónde terminó el viaje anterior. Sin eso, si $from cae mientras
+     *     la unidad espera en un hotel, las maniobras con motor encendido en la entrada se
+     *     toman como un viaje nuevo. 4 nov: la ventana de 48 h del cron pasó por las esperas
+     *     en el Grand Oasis y rehízo las salidas de las 12:53 y 13:45 como 12:50 y 13:40, más
+     *     una maniobra falsa a las 12:42, que borraron a las buenas.
      *
      * @return Collection<Trip>
      */
     public function buildForVehicle(Vehicle $vehicle, string $from, string $to): Collection
     {
+        $previous = Trip::where('vehicle_id', $vehicle->id)
+            ->where('data_source', 'real')
+            ->where('started_at', '<', $from)
+            ->orderByDesc('started_at')
+            ->first();
+
+        // La más temprana entre el anterior y uno que todavía siga abierto en $from
         $spanning = Trip::where('vehicle_id', $vehicle->id)
             ->where('data_source', 'real')
             ->where('started_at', '<', $from)
@@ -191,8 +203,9 @@ class TripBuilderService
             ->orderBy('started_at')
             ->first();
 
-        if ($spanning) {
-            $from = $spanning->started_at->toDateTimeString();
+        $earliest = collect([$previous, $spanning])->filter()->sortBy('started_at')->first();
+        if ($earliest) {
+            $from = $earliest->started_at->toDateTimeString();
         }
 
         $positions = Position::where('vehicle_id', $vehicle->id)
