@@ -71,6 +71,9 @@ class OperationClassifier
     // Posible no-show: esperó al menos esto en un hotel y de ahí no fue al aeropuerto.
     // 6 nov: 29 min en el Fairfield y se fue al Grand Oasis (Kevin confirmó no-show).
     protected const NO_SHOW_WAIT_MINUTES = 15;
+    // Ir a un lugar así de cerca de una terminal cuenta como ir al aeropuerto (7 nov: de
+    // Moon Palace pasó al Fairfield, a 2 km de T3, y de ahí a T3: no fue no-show)
+    protected const NO_SHOW_AIRPORT_METERS = 3000;
     // Para buscar el hotel de una recogida detrás de las maniobras en la entrada
     protected const PICKUP_AREA_METERS = 1000;
     // Llegada que se detuvo antes del hotel (caseta, tráfico) y siguió hasta él: se junta
@@ -270,7 +273,7 @@ class OperationClassifier
             // La espera es hasta que se movió por primera vez (6 nov: 10:14 a 10:46)
             $wait = $next['start'] - $leg['end'];
             if ($review === null
-                && ($wait < self::NO_SHOW_WAIT_MINUTES * 60 || $this->isAirport($leaving['destination']))) {
+                && ($wait < self::NO_SHOW_WAIT_MINUTES * 60 || $this->nearAirport($leaving['destination'], self::NO_SHOW_AIRPORT_METERS))) {
                 continue;
             }
 
@@ -522,6 +525,20 @@ class OperationClassifier
         }
 
         return $reasons ? [self::PENDING, $reasons, false] : [self::PROBABLE, [], true];
+    }
+
+    protected function nearAirport(array $point, float $meters): bool
+    {
+        if ($this->isAirport($point)) {
+            return true;
+        }
+        foreach ($this->terminals as $terminal) {
+            if ($this->meters($point, $terminal) <= $meters) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function isAirport(array $point): bool
