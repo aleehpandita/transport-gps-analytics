@@ -15,6 +15,8 @@ Medido con las posiciones reales de la unidad piloto (25 al 29 de septiembre de 
 
 Estos puntos deben resolverse antes de configurar los dispositivos de la flota.
 
+**Actualización 5 nov 2026: resuelto desde el 22 de octubre; ver sección 4.9.**
+
 ## 1. Dispositivo
 
 | Campo | Valor |
@@ -308,6 +310,55 @@ sudo tcpdump -r ~/trayecto.pcap -nn -tttt 2>/dev/null | awk -f ~/conexiones.awk 
 
 El script `~/conexiones.awk` resume cada conexión: bytes enviados por cada lado, segmento más grande, quién cierra y si hubo reset.
 
+### 4.9 Retraso después de la reconfiguración (medido el 5 nov 2026)
+
+Desde el **22 de octubre de 2026** ya no hay retrasos de horas (comparar con 4.3).
+El retraso se mide como `server_time - device_time` de cada posición.
+
+| Día | Posiciones | Retraso prom. (min) | Retraso máx. (min) | % con más de 5 min |
+|---|---|---|---|---|
+| 2026-10-23 | 4376 | 0.0 | 4 | 0.0 |
+| 2026-10-25 | 5798 | 0.0 | 2 | 0.0 |
+| 2026-10-26 | 3696 | 0.0 | 2 | 0.0 |
+| 2026-10-27 | 7510 | 1.8 | 31 | 9.9 |
+| 2026-10-28 | 5167 | 0.0 | 3 | 0.0 |
+| 2026-10-29 | 6191 | 2.1 | 27 | 13.1 |
+| 2026-10-30 | 675 | 0.1 | 2 | 0.0 |
+| 2026-10-31 | 4624 | 0.1 | 8 | 0.4 |
+| 2026-11-01 | 4802 | 0.1 | 4 | 0.0 |
+| 2026-11-02 | 4782 | 0.0 | 2 | 0.0 |
+| 2026-11-03 | 3545 | 0.1 | 8 | 0.5 |
+| 2026-11-04 | 4990 | 0.1 | 7 | 0.2 |
+| 2026-11-05 | 8591 | 0.0 | 2 | 0.0 |
+
+**Últimos 7 días (30 oct a 5 nov):** retraso promedio de 0.1 min o menos, máximo de
+8 min, y menos del 0.5% de las posiciones tardó más de 5 min.
+
+**Picos del 27 y 29 de octubre:** los dos días hubo viajes a Chiquilá, por carretera
+rural con poca cobertura celular. El FMC920 guarda las posiciones mientras no hay
+señal y las reenvía al recuperarla. Es el comportamiento esperado, no una falla.
+
+**Consecuencia para el sync:** `traccar:sync-positions` corre cada 2 min con
+`--hours=10`, pensado para el retraso de 8.4 h. Con el retraso actual bastarían 1 o
+2 h; los huecos más grandes los rellena el propio comando desde la última posición
+guardada.
+
+Para volver a medirlo, en el servidor:
+
+```bash
+cd /var/www/ekmira/backend
+sudo -u www-data sqlite3 -header -column database/database.sqlite "
+SELECT date(device_time, '-5 hours') AS dia,
+       COUNT(*) AS posiciones,
+       ROUND(AVG((julianday(server_time) - julianday(device_time)) * 1440), 1) AS retraso_prom_min,
+       ROUND(MAX((julianday(server_time) - julianday(device_time)) * 1440), 0) AS retraso_max_min,
+       ROUND(100.0 * SUM((julianday(server_time) - julianday(device_time)) * 1440 > 5) / COUNT(*), 1) AS pct_mas_de_5min
+FROM positions
+WHERE server_time IS NOT NULL AND device_time >= datetime('now', '-14 days')
+GROUP BY dia ORDER BY dia;"
+```
+
+
 ## 5. Implicaciones para el sistema
 
 ### Sincronización (`traccar:sync-positions`)
@@ -324,7 +375,7 @@ Umbral de "Sin señal reciente" según el último estado conocido (implementado 
 | En movimiento | 318 s | 8 min |
 | Detenido o apagado | cerca de 1 h | 65 min |
 
-Mientras no se resuelva el retraso de 4.3, el dashboard no puede mostrar la posición actual de una unidad en recorrido.
+El retraso de 4.3 está resuelto desde el 22 de octubre (sección 4.9): el mapa en vivo ya muestra la posición actual de la unidad en recorrido.
 
 ### Presupuesto de datos
 
