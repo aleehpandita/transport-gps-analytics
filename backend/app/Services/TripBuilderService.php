@@ -345,7 +345,7 @@ class TripBuilderService
             // Regla 3: detenida en un lugar de servicio (banqueta del aeropuerto, lobby).
             // Va antes que la de permanencia porque cierra mucho más rápido.
             if ($closingPoint === null) {
-                $place = $traveledFar ? $this->placeAt($position) : null;
+                $place = $this->placeAt($position);
                 $slowHere = $position->speed < self::PLACE_SLOW_KMH || $silence;
 
                 if ($place === null || !$slowHere || $place->id !== $placeStopPlaceId) {
@@ -364,8 +364,25 @@ class TripBuilderService
 
                     $stopSeconds = abs($position->device_time->diffInSeconds($placeStop->device_time));
 
-                    if ($stopSeconds >= self::PLACE_STOP_SECONDS) {
+                    if ($stopSeconds >= self::PLACE_STOP_SECONDS && $traveledFar) {
                         $closingPoint = $placeStop;
+                    } elseif ($stopSeconds >= self::PLACE_STOP_SECONDS
+                        && in_array($place->type, ['hotel', 'stop'], true)
+                        && $this->placeAt($tripStart)?->id !== $place->id) {
+                        // Se movió menos de PLACE_MIN_TRIP_KM y se detuvo en un hotel o parada del catálogo:
+                        // no es un viaje, es acercarse al lobby (8 nov: esperó en una calle a 300 m
+                        // del Temptation y a las 9:29 pasó al lobby a recoger). La espera sigue,
+                        // ahora en el lugar, y el viaje empieza cuando salga de ahí.
+                        $lastClosePoint = $placeStop;
+                        $tripStart = null;
+                        $tripPositions = [];
+                        $endCandidate = null;
+                        $dwellAnchor = null;
+                        $placeStop = null;
+                        $placeStopPlaceId = null;
+                        $movingSince = null;
+                        $hasMovedInWindow = false;
+                        continue;
                     }
                 }
             }

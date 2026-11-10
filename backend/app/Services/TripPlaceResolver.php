@@ -85,14 +85,17 @@ class TripPlaceResolver
             $start = $positions->get($this->key($trip->vehicle_id, $trip->started_at));
             $end = $positions->get($this->key($trip->vehicle_id, $trip->ended_at));
 
-            $origin = $this->point($places, $start);
             $before = $previous->get($trip->id);
             $after = $next->get($trip->id);
 
-            // Sin lugar al inicio: el lugar donde estuvo antes de arrancar
-            if ($origin['name'] === null && $before) {
-                $origin = $this->placeInGap($places, $trip->vehicle_id, $before->ended_at, $trip->started_at) ?? $origin;
-            }
+            // Primero el lugar donde estuvo detenida antes de arrancar (la última hora). El punto
+            // de inicio queda a unos 200 m de donde estaba (el viaje empieza al salir de ese radio)
+            // y en la zona hotelera ese punto puede caer en el hotel de al lado (8 nov: salió del
+            // Temptation y el inicio cayó en Cancun Bay; 7 nov: Riu Caribe y Sunset Marina).
+            $origin = $before
+                ? $this->placeInGap($places, $trip->vehicle_id, $before->ended_at, $trip->started_at, true)
+                : null;
+            $origin ??= $this->point($places, $start);
 
             // Si no, si arrancó cerca de donde terminó el viaje anterior, viene de ahí
             $beforeEnd = $before ? $previousEnds->get($this->key($before->vehicle_id, $before->ended_at)) : null;
@@ -235,10 +238,14 @@ class TripPlaceResolver
      *
      * @param Collection<int, Place> $places
      */
-    protected function placeInGap(Collection $places, int $vehicleId, \DateTimeInterface $from, \DateTimeInterface $to): ?array
+    protected function placeInGap(Collection $places, int $vehicleId, \DateTimeInterface $from, \DateTimeInterface $to, bool $lastHourOnly = false): ?array
     {
         if ($to->getTimestamp() - $from->getTimestamp() > self::GAP_MAX_SECONDS) {
-            return null;
+            if (!$lastHourOnly) {
+                return null;
+            }
+            // Para el origen basta la última hora antes de arrancar
+            $from = (new \DateTimeImmutable('@' . ($to->getTimestamp() - self::GAP_MAX_SECONDS)))->setTimezone($to->getTimezone());
         }
 
         $positions = Position::where('vehicle_id', $vehicleId)
