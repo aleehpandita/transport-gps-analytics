@@ -217,6 +217,14 @@ class OperationClassifier
             if ($this->isNotPickupSpot($leg['origin'])) {
                 return self::POSITIONING;
             }
+            // El viaje arrancó en un punto sin nombre, pero donde estuvo parada antes es la
+            // casa del chofer, la gasolinera o una espera: no recogió a nadie (9 nov: estuvo
+            // en su casa de 17:31 a 23:00 y el viaje arrancó a 190 m; salía como salida
+            // desde "Casa del chofer")
+            [$pickup] = $this->pickupPoint($leg, $before);
+            if ($this->isNotPickupSpot($pickup)) {
+                return self::POSITIONING;
+            }
             return $this->isReturn($leg, $before) ? self::RETURN : self::DEPARTURE;
         }
 
