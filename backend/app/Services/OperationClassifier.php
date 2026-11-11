@@ -87,9 +87,11 @@ class OperationClassifier
     protected const SAME_SPOT_METERS = 300;
     // Después de una bajada, un viaje al aeropuerto dentro de este tiempo es el regreso
     protected const RETURN_WINDOW_MINUTES = 30;
-    // Una salida con menos espera que esto es dudosa (26 oct, 09:11: 2 min junto a un hotel
-    // del aeropuerto, sin servicio en la orden)
-    protected const MIN_PICKUP_WAIT_SECONDS = 180;
+    // Una salida con menos espera que esto es dudosa (26 oct, 09:11: junto a un hotel del
+    // aeropuerto, sin servicio en la orden). Era 3 min; con pasajeros listos en el lobby
+    // Kevin recoge en 2 (6 nov Riu Ventura, 10 nov Riu Caribe, los dos en la hoja). Probado
+    // del 19 oct al 10 nov: solo cambian esas dos salidas.
+    protected const MIN_PICKUP_WAIT_SECONDS = 120;
     // Si sale del aeropuerto hacia un hotel menos de esto después de dejar pasajeros de una
     // salida, desde el mismo punto, puede ser una llegada (los pasajeros ya esperaban) o que
     // vaya por otra salida (27 oct: dejó en T4 y 2 min después fue a recoger a Le Blanc).
