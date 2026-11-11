@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { ClientsView } from './components/ClientsView'
+import { CompanyUsersView } from './components/CompanyUsersView'
 import { Dashboard } from './components/Dashboard'
 import { EventsView } from './components/EventsView'
 import { HistoryView } from './components/HistoryView'
@@ -15,18 +17,23 @@ type AuthState =
 
 // Rutas por hash, sin librería: #/ es el mapa en vivo, #/historial/2/2026-10-21 el historial,
 // #/operacion la operación del día, #/reportes los reportes y #/eventos los eventos y alertas.
+// #/clientes es el panel de EkMira (admins) y #/usuarios los usuarios de la empresa (dueños).
 // Con hash, Nginx no necesita configuración extra para que funcione recargar la página.
 type Route =
   | { page: 'live' }
   | { page: 'operation' }
   | { page: 'reports' }
   | { page: 'events' }
+  | { page: 'clients' }
+  | { page: 'users' }
   | { page: 'history'; vehicleId: number | null; date: string | null }
 
 function parseHash(hash: string): Route {
   if (hash.startsWith('#/reportes')) return { page: 'reports' }
   if (hash.startsWith('#/eventos')) return { page: 'events' }
   if (hash.startsWith('#/operacion')) return { page: 'operation' }
+  if (hash.startsWith('#/clientes')) return { page: 'clients' }
+  if (hash.startsWith('#/usuarios')) return { page: 'users' }
   const match = hash.match(/^#\/historial(?:\/(\d+))?(?:\/(\d{4}-\d{2}-\d{2}))?/)
   if (!match) return { page: 'live' }
   return { page: 'history', vehicleId: match[1] ? Number(match[1]) : null, date: match[2] ?? null }
@@ -84,6 +91,15 @@ export default function App() {
 
   if (auth.status === 'guest') {
     return <LoginScreen onLoggedIn={(user) => setAuth({ status: 'authenticated', user })} />
+  }
+
+  // Administración: cada página solo para su rol; con otro rol se queda en el mapa
+  if (route.page === 'clients' && auth.user.role === 'admin') {
+    return <ClientsView user={auth.user} onLogout={handleLogout} />
+  }
+
+  if (route.page === 'users' && auth.user.role === 'owner') {
+    return <CompanyUsersView user={auth.user} onLogout={handleLogout} />
   }
 
   if (route.page === 'operation') {

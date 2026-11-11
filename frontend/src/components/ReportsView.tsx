@@ -108,7 +108,7 @@ export function ReportsView({ user, onLogout }: ReportsViewProps) {
       <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 lg:px-6">
         <h1 className="text-lg font-semibold">Reportes</h1>
         <div className="ml-auto flex flex-wrap items-center gap-3 text-sm">
-          <NavLinks current="reports" />
+          <NavLinks current="reports" user={user} />
           <span className="text-ink-muted">{user.name}</span>
           <button
             type="button"

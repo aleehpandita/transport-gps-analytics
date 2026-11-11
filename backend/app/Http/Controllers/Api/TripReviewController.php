@@ -22,6 +22,8 @@ class TripReviewController extends Controller
 {
     public function store(Request $request): JsonResponse
     {
+        abort_unless($request->user()->canEdit(), 403, 'Tu usuario es de solo consulta.');
+
         $validated = $request->validate([
             'trip_id' => ['required', 'integer'],
             'status' => ['required', Rule::in([...OperationClassifier::REVIEWS, 'clear'])],

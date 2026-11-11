@@ -1,4 +1,9 @@
 import type {
+  AdminCompany,
+  AdminCompanyDetail,
+  AdminVehicle,
+  AccountUser,
+  CompanyRole,
   Collection,
   DailyReportRow,
   EventsPage,
@@ -66,10 +71,14 @@ async function ensureCsrfCookie(): Promise<void> {
 }
 
 async function postJson<T>(path: string, body: unknown = {}): Promise<T> {
+  return sendJson<T>('POST', path, body)
+}
+
+async function sendJson<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body: unknown = {}): Promise<T> {
   await ensureCsrfCookie()
 
   const res = await fetch(`/api${path}`, {
-    method: 'POST',
+    method,
     credentials: 'same-origin',
     headers: {
       Accept: 'application/json',
@@ -89,7 +98,12 @@ async function postJson<T>(path: string, body: unknown = {}): Promise<T> {
 
     // En el login un 401 no es "sesión expirada", es simplemente que no hay sesión todavía
     if (path !== '/login') notifyIfSessionExpired(res.status)
-    throw new ApiError(res.status, `POST /api${path} respondió ${res.status}`)
+    // 403 y 422 de abort() traen un mensaje para mostrar tal cual
+    if (res.status === 403 || res.status === 422) {
+      const payload = (await res.json().catch(() => null)) as { message?: string } | null
+      if (payload?.message) throw new ApiError(res.status, payload.message)
+    }
+    throw new ApiError(res.status, `${method} /api${path} respondió ${res.status}`)
   }
 
   return res.json() as Promise<T>
@@ -197,3 +211,72 @@ export const createPlace = (place: { name: string; latitude: number; longitude: 
 
 // Viajes de hoy de las unidades del usuario. El backend corta el día en hora Cancún.
 export const fetchTodayTrips = (signal: AbortSignal) => getJson<Collection<Trip>>('/trips', signal).then((r) => r.data)
+// Panel de EkMira: empresas, unidades y usuarios de todos los clientes (solo admins)
+export const fetchAdminCompanies = (signal?: AbortSignal) =>
+  getJson<Collection<AdminCompany>>('/admin/companies', signal).then((r) => r.data)
+
+export const fetchAdminCompany = (id: number, signal?: AbortSignal) =>
+  getJson<{ data: AdminCompanyDetail }>(`/admin/companies/${id}`, signal).then((r) => r.data)
+
+export interface CompanyInput {
+  name: string
+  legal_name?: string | null
+  rfc?: string | null
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
+  plan?: string | null
+  monthly_price?: number | null
+  status?: 'active' | 'suspended'
+  notes?: string | null
+}
+
+export const createCompany = (input: CompanyInput) =>
+  postJson<{ data: AdminCompany }>('/admin/companies', input).then((r) => r.data)
+
+export const updateCompany = (id: number, input: Partial<CompanyInput>) =>
+  sendJson<{ data: AdminCompany }>('PATCH', `/admin/companies/${id}`, input).then((r) => r.data)
+
+export const fetchUnassignedVehicles = (signal?: AbortSignal) =>
+  getJson<Collection<AdminVehicle>>('/admin/vehicles?unassigned=1', signal).then((r) => r.data)
+
+// Alta de unidad: {vehicle_id} asigna una que ya existe; {name, imei, plate} registra un equipo nuevo en Traccar
+export const addCompanyVehicle = (
+  companyId: number,
+  input: { vehicle_id: number } | { name: string; imei: string; plate?: string | null },
+) => postJson<{ data: AdminVehicle }>(`/admin/companies/${companyId}/vehicles`, input).then((r) => r.data)
+
+export const updateAdminVehicle = (
+  id: number,
+  input: Partial<{ name: string; plate: string | null; make: string | null; model: string | null; active: boolean; company_id: number | null }>,
+) => sendJson<{ data: AdminVehicle }>('PATCH', `/admin/vehicles/${id}`, input).then((r) => r.data)
+
+export const createAdminUser = (companyId: number, input: { name: string; email: string; role: CompanyRole }) =>
+  postJson<{ data: AccountUser }>(`/admin/companies/${companyId}/users`, input).then((r) => r.data)
+
+export const updateAdminUser = (id: number, input: { name?: string; role?: CompanyRole }) =>
+  sendJson<{ data: AccountUser }>('PATCH', `/admin/users/${id}`, input).then((r) => r.data)
+
+export const resetAdminUserPassword = (id: number) =>
+  postJson<{ data: AccountUser }>(`/admin/users/${id}/reset-password`).then((r) => r.data)
+
+export const deleteAdminUser = (id: number) => sendJson<{ message: string }>('DELETE', `/admin/users/${id}`)
+
+// El admin ve el panel como una empresa; null regresa a ver todo
+export const viewAsCompany = (companyId: number | null) =>
+  postJson<{ data: { acting_company_id: number | null } }>('/admin/view-as', { company_id: companyId })
+
+// El dueño de una empresa administra a sus usuarios
+export const fetchCompanyUsers = (signal?: AbortSignal) =>
+  getJson<Collection<AccountUser>>('/company/users', signal).then((r) => r.data)
+
+export const createCompanyUser = (input: { name: string; email: string; role: CompanyRole }) =>
+  postJson<{ data: AccountUser }>('/company/users', input).then((r) => r.data)
+
+export const updateCompanyUser = (id: number, input: { name?: string; role?: CompanyRole }) =>
+  sendJson<{ data: AccountUser }>('PATCH', `/company/users/${id}`, input).then((r) => r.data)
+
+export const resetCompanyUserPassword = (id: number) =>
+  postJson<{ data: AccountUser }>(`/company/users/${id}/reset-password`).then((r) => r.data)
+
+export const deleteCompanyUser = (id: number) => sendJson<{ message: string }>('DELETE', `/company/users/${id}`)

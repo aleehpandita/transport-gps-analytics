@@ -41,6 +41,53 @@ class TraccarService
     }
 
     /**
+     * Busca un equipo por su IMEI (uniqueId en Traccar). null si no está registrado.
+     */
+    public function findDeviceByUniqueId(string $uniqueId): ?array
+    {
+        $response = Http::withBasicAuth($this->username, $this->password)
+            ->get("{$this->baseUrl}/api/devices", ['uniqueId' => $uniqueId]);
+
+        if ($response->failed()) {
+            Log::error('TraccarService: fallo al buscar dispositivo', [
+                'uniqueId' => $uniqueId,
+                'status' => $response->status(),
+            ]);
+
+            throw new \RuntimeException("Error al consultar Traccar: HTTP {$response->status()}");
+        }
+
+        return $response->json()[0] ?? null;
+    }
+
+    /**
+     * Da de alta un equipo en Traccar para que empiece a recibir sus posiciones.
+     * Si el IMEI ya existe, regresa el que ya estaba (dar de alta dos veces no falla).
+     */
+    public function createDevice(string $name, string $uniqueId): array
+    {
+        $existing = $this->findDeviceByUniqueId($uniqueId);
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $response = Http::withBasicAuth($this->username, $this->password)
+            ->post("{$this->baseUrl}/api/devices", ['name' => $name, 'uniqueId' => $uniqueId]);
+
+        if ($response->failed()) {
+            Log::error('TraccarService: fallo al crear dispositivo', [
+                'uniqueId' => $uniqueId,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            throw new \RuntimeException("Traccar no aceptó el equipo: HTTP {$response->status()}");
+        }
+
+        return $response->json();
+    }
+
+    /**
      * Regresa posiciones de un dispositivo. Si se omiten $from/$to,
      * Traccar regresa únicamente la última posición conocida.
      */

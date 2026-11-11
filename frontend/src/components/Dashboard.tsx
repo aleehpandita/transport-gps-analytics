@@ -15,6 +15,7 @@ import {
   fetchZones,
 } from '../lib/apiClient'
 import { formatKm } from '../lib/format'
+import { ROLE_LABEL } from '../lib/roles'
 import type { LivePosition, User, Vehicle } from '../types/api'
 
 const VEHICLES_INTERVAL_MS = 15_000
@@ -61,12 +62,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
       <div className="flex items-center justify-end gap-3 border-b border-line px-4 py-2 text-sm text-ink-muted lg:px-6">
         <div className="mr-auto">
-          <NavLinks current="live" />
+          <NavLinks current="live" user={user} />
         </div>
         <span>
           {user.name}
           <span className="ml-2 font-mono text-[11px] tracking-[0.14em] uppercase">
-            {user.role === 'admin' ? 'Admin' : 'Cliente'}
+            {ROLE_LABEL[user.role]}
           </span>
         </span>
         <button

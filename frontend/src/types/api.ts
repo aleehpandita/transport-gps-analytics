@@ -115,11 +115,74 @@ export interface Paginated<T> extends Collection<T> {
 }
 
 // GET /api/me y POST /api/login: el usuario con sesión
+export type CompanyRole = 'owner' | 'operator' | 'viewer'
+export type UserRole = 'admin' | CompanyRole
+
+export interface CompanyRef {
+  id: number
+  name: string
+}
+
 export interface User {
   id: number
   name: string
   email: string
-  role: 'admin' | 'client'
+  role: UserRole
+  can_edit: boolean // confirmar servicios y marcar viajes (todos menos solo lectura)
+  company: CompanyRef | null
+  acting_company: CompanyRef | null // solo admins: la empresa que está viendo como cliente
+}
+
+// Cuentas por empresa: usuarios que administra el admin o el dueño de la empresa
+export interface AccountUser {
+  id: number
+  name: string
+  email: string
+  role: UserRole
+  company_id: number | null
+  created_at: string | null
+  temporary_password?: string // solo al darlo de alta o restablecer, una sola vez
+}
+
+// GET /api/admin/*: panel de EkMira
+export type SignalStatus = 'ok' | 'no_signal' | 'never'
+
+export interface AdminVehicle {
+  id: number
+  company_id: number | null
+  name: string
+  plate: string | null
+  imei: string | null
+  make: string | null
+  model: string | null
+  active: boolean
+  traccar_device_id: number | null
+  last_report_at: string | null
+  signal: SignalStatus
+}
+
+export interface AdminCompany {
+  id: number
+  name: string
+  legal_name: string | null
+  rfc: string | null
+  contact_name: string | null
+  contact_email: string | null
+  contact_phone: string | null
+  plan: string | null
+  monthly_price: number | null
+  status: 'active' | 'suspended'
+  notes: string | null
+  created_at: string | null
+  vehicles_count?: number
+  vehicles_without_signal?: number
+  users_count?: number
+  last_report_at?: string | null
+}
+
+export interface AdminCompanyDetail extends AdminCompany {
+  vehicles: AdminVehicle[]
+  users: AccountUser[]
 }
 
 // GET /api/vehicles/{id}/route?date=...: el recorrido de un día para el historial.
