@@ -346,9 +346,10 @@ class TripBuilderService
             // Va antes que la de permanencia porque cierra mucho más rápido.
             if ($closingPoint === null) {
                 $place = $this->placeAt($position);
+                $placeKey = $this->stopKey($place);
                 $slowHere = $position->speed < self::PLACE_SLOW_KMH || $silence;
 
-                if ($place === null || !$slowHere || $place->id !== $placeStopPlaceId) {
+                if ($place === null || !$slowHere || $placeKey !== $placeStopPlaceId) {
                     // Fuera del lugar, o pasando sin detenerse: no hay candidato
                     $placeStop = null;
                     $placeStopPlaceId = null;
@@ -357,9 +358,9 @@ class TripBuilderService
                 if ($place !== null && $slowHere) {
                     if ($placeStop === null) {
                         // Si llegó en silencio, se detuvo desde la posición anterior
-                        $startedAtPrevious = $silence && $this->placeAt($previous)?->id === $place->id;
+                        $startedAtPrevious = $silence && $this->stopKey($this->placeAt($previous)) === $placeKey;
                         $placeStop = $startedAtPrevious ? $previous : $position;
-                        $placeStopPlaceId = $place->id;
+                        $placeStopPlaceId = $placeKey;
                     }
 
                     $stopSeconds = abs($position->device_time->diffInSeconds($placeStop->device_time));
@@ -708,6 +709,22 @@ class TripBuilderService
     /**
      * Lugar de servicio donde está la posición, o null. Si dos se enciman, gana el más cercano.
      */
+    /**
+     * Con qué se compara si la unidad sigue detenida en el mismo lugar. Las terminales
+     * del aeropuerto se tratan como un solo lugar: sus puntos se enciman (T2 nacional y T2
+     * nacional llegadas están a 130 m) y al bajar pasajeros la unidad cruza de uno a otro
+     * (10 nov: dejó en T2 de 11:16 a 11:18 y, como el lugar más cercano cambiaba, nunca
+     * contó 15 s seguidos en uno; el viaje de Ventus siguió de largo hasta la zona hotelera).
+     */
+    protected function stopKey(?Place $place): int|string|null
+    {
+        if ($place === null) {
+            return null;
+        }
+
+        return $place->type === 'airport_terminal' ? 'airport' : $place->id;
+    }
+
     protected function placeAt(Position $position): ?Place
     {
         $best = null;
