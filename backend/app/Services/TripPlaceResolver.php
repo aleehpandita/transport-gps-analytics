@@ -36,6 +36,8 @@ class TripPlaceResolver
      * lugar, se busca el lugar donde estuvo la unidad en ese hueco, si duró menos que esto.
      */
     protected const GAP_MAX_SECONDS = 3600;
+    // Para el origen: tiempo mínimo detenida en un lugar para contarlo
+    protected const ORIGIN_MIN_STOP_SECONDS = 60;
 
     /** @var Collection<int, Place>|null */
     protected ?Collection $places = null;
@@ -257,6 +259,7 @@ class TripPlaceResolver
 
         $seconds = [];
         $points = [];
+        $lastSeen = [];
         foreach ($positions as $i => $position) {
             $point = $this->point($places, $position);
             $nextTime = $positions[$i + 1]->device_time ?? $to;
@@ -265,10 +268,25 @@ class TripPlaceResolver
             }
             $seconds[$point['place_id']] = ($seconds[$point['place_id']] ?? 0) + ($nextTime->getTimestamp() - $position->device_time->getTimestamp());
             $points[$point['place_id']] ??= $point;
+            $lastSeen[$point['place_id']] = $position->device_time->getTimestamp();
         }
 
         if (!$seconds) {
             return null;
+        }
+
+        if ($lastHourOnly) {
+            // Para el origen cuenta el último lugar donde estuvo detenida, no el de más tiempo
+            // (10 nov: esperó 21 min frente al Aloft, pasó al lobby del Riu Palace Las Américas,
+            // recogió en 7 min y salió; el origen salía "Aloft"). Pasar por un lugar sin
+            // detenerse no cuenta.
+            $stopped = array_filter($seconds, fn ($s) => $s >= self::ORIGIN_MIN_STOP_SECONDS);
+            if ($stopped) {
+                $recent = array_intersect_key($lastSeen, $stopped);
+                arsort($recent);
+
+                return $points[array_key_first($recent)];
+            }
         }
 
         arsort($seconds);
