@@ -105,7 +105,7 @@ export function OperationsView({ user, onLogout }: OperationsViewProps) {
       <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 lg:px-6">
         <h1 className="text-lg font-semibold">Operación</h1>
         <div className="ml-auto flex flex-wrap items-center gap-3 text-sm">
-          <NavLinks current="operation" />
+          <NavLinks current="operation" user={user} />
           <span className="text-ink-muted">{user.name}</span>
           <button
             type="button"
@@ -182,8 +182,13 @@ export function OperationsView({ user, onLogout }: OperationsViewProps) {
             {day.unnamed.length > 0 && (
               <UnnamedSpots spots={day.unnamed} canApprove={isAdmin} onApproved={() => setReload((n) => n + 1)} />
             )}
-            <ServicesTable services={day.services} showVehicle={manyVehicles} onReviewed={() => setReload((n) => n + 1)} />
-            <LegsList day={day} showVehicle={manyVehicles} onReviewed={() => setReload((n) => n + 1)} />
+            <ServicesTable
+              services={day.services}
+              showVehicle={manyVehicles}
+              canEdit={user.can_edit}
+              onReviewed={() => setReload((n) => n + 1)}
+            />
+            <LegsList day={day} showVehicle={manyVehicles} canEdit={user.can_edit} onReviewed={() => setReload((n) => n + 1)} />
           </>
         )}
       </main>
@@ -352,10 +357,12 @@ function ReviewEditor({
 function ServicesTable({
   services,
   showVehicle,
+  canEdit,
   onReviewed,
 }: {
   services: OperationService[]
   showVehicle: boolean
+  canEdit: boolean // un usuario de solo consulta no ve los botones para confirmar
   onReviewed: () => void
 }) {
   const [editing, setEditing] = useState<number | null>(null)
@@ -422,13 +429,15 @@ function ServicesTable({
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{s.km.toFixed(1)}</td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setEditing(editing === s.trip_id ? null : s.trip_id)}
-                      className="rounded-md border border-line px-2.5 py-1 whitespace-nowrap text-ink-muted hover:bg-surface-raised"
-                    >
-                      {s.review ? 'Cambiar' : 'Confirmar'}
-                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setEditing(editing === s.trip_id ? null : s.trip_id)}
+                        className="rounded-md border border-line px-2.5 py-1 whitespace-nowrap text-ink-muted hover:bg-surface-raised"
+                      >
+                        {s.review ? 'Cambiar' : 'Confirmar'}
+                      </button>
+                    )}
                   </td>
                 </tr>
                 {editing === s.trip_id && (
@@ -567,7 +576,17 @@ function SpotRow({ spot, canApprove, onApproved }: { spot: UnnamedSpot; canAppro
   )
 }
 
-function LegsList({ day, showVehicle, onReviewed }: { day: OperationDay; showVehicle: boolean; onReviewed: () => void }) {
+function LegsList({
+  day,
+  showVehicle,
+  canEdit,
+  onReviewed,
+}: {
+  day: OperationDay
+  showVehicle: boolean
+  canEdit: boolean
+  onReviewed: () => void
+}) {
   const [editing, setEditing] = useState<number | null>(null)
 
   return (
@@ -584,7 +603,7 @@ function LegsList({ day, showVehicle, onReviewed }: { day: OperationDay; showVeh
             date={day.date}
             showVehicle={showVehicle}
             editing={editing === l.trip_id}
-            onToggle={() => setEditing(editing === l.trip_id ? null : l.trip_id)}
+            onToggle={canEdit ? () => setEditing(editing === l.trip_id ? null : l.trip_id) : undefined}
             onDone={(changed) => {
               setEditing(null)
               if (changed) onReviewed()
@@ -608,7 +627,7 @@ function LegRow({
   date: string
   showVehicle: boolean
   editing: boolean
-  onToggle: () => void
+  onToggle?: () => void
   onDone: (changed: boolean) => void
 }) {
   return (
@@ -634,13 +653,15 @@ function LegRow({
         >
           Ver
         </a>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="rounded-md border border-line px-2.5 py-1 text-ink-muted hover:bg-surface-raised"
-        >
-          {l.review ? 'Cambiar' : 'Marcar'}
-        </button>
+        {onToggle && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="rounded-md border border-line px-2.5 py-1 text-ink-muted hover:bg-surface-raised"
+          >
+            {l.review ? 'Cambiar' : 'Marcar'}
+          </button>
+        )}
       </div>
       {l.review?.note && <div className="mt-1 pl-7 text-xs text-ink-muted">“{l.review.note}”</div>}
       {editing && (

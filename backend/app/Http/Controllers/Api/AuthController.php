@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,6 +49,15 @@ class AuthController extends Controller
 
         RateLimiter::clear($key);
 
+        // Empresa suspendida (por ejemplo, por falta de pago): no entra hasta que se reactive
+        if ($request->user()->company && !$request->user()->company->isActive()) {
+            Auth::guard('web')->logout();
+
+            throw ValidationException::withMessages([
+                'email' => 'La cuenta de tu empresa está suspendida. Escríbenos a contacto@ekmira.com.',
+            ]);
+        }
+
         // Sesión nueva al iniciar: evita que alguien reuse un id de sesión anterior
         $request->session()->regenerate();
 
@@ -71,11 +81,17 @@ class AuthController extends Controller
 
     protected function userPayload(User $user): array
     {
+        $acting = $user->actingCompanyId() ? Company::find($user->actingCompanyId()) : null;
+
         return [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
             'role' => $user->role,
+            'can_edit' => $user->canEdit(),
+            'company' => $user->company ? ['id' => $user->company->id, 'name' => $user->company->name] : null,
+            // Solo admins: la empresa que está viendo como cliente
+            'acting_company' => $acting ? ['id' => $acting->id, 'name' => $acting->name] : null,
         ];
     }
 }

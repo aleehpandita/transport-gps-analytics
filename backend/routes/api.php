@@ -1,6 +1,10 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\CompanyController as AdminCompanyController;
+use App\Http\Controllers\Api\Admin\UserAdminController;
+use App\Http\Controllers\Api\Admin\VehicleAdminController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CompanyUserController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\LiveVehicleController;
 use App\Http\Controllers\Api\OperationController;
@@ -54,5 +58,32 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('scheduled-services')->group(function () {
         Route::get('/', [ScheduledServiceController::class, 'index']);
         Route::post('/', [ScheduledServiceController::class, 'store']);
+    });
+
+    // El dueño de cada empresa administra a sus usuarios
+    Route::middleware('company.owner')->prefix('company')->group(function () {
+        Route::get('/users', [CompanyUserController::class, 'index']);
+        Route::post('/users', [CompanyUserController::class, 'store']);
+        Route::patch('/users/{user}', [CompanyUserController::class, 'update']);
+        Route::post('/users/{user}/reset-password', [CompanyUserController::class, 'resetPassword']);
+        Route::delete('/users/{user}', [CompanyUserController::class, 'destroy']);
+    });
+
+    // Panel de EkMira: empresas, unidades y usuarios de todos los clientes
+    Route::middleware('admin')->prefix('admin')->group(function () {
+        Route::get('/companies', [AdminCompanyController::class, 'index']);
+        Route::post('/companies', [AdminCompanyController::class, 'store']);
+        Route::get('/companies/{company}', [AdminCompanyController::class, 'show']);
+        Route::patch('/companies/{company}', [AdminCompanyController::class, 'update']);
+        Route::post('/companies/{company}/vehicles', [VehicleAdminController::class, 'store']);
+        Route::post('/companies/{company}/users', [UserAdminController::class, 'store']);
+        Route::post('/view-as', [AdminCompanyController::class, 'viewAs']);
+
+        Route::get('/vehicles', [VehicleAdminController::class, 'index']);
+        Route::patch('/vehicles/{vehicle}', [VehicleAdminController::class, 'update']);
+
+        Route::patch('/users/{user}', [UserAdminController::class, 'update']);
+        Route::post('/users/{user}/reset-password', [UserAdminController::class, 'resetPassword']);
+        Route::delete('/users/{user}', [UserAdminController::class, 'destroy']);
     });
 });

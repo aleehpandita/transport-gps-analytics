@@ -21,6 +21,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // A quien no tiene sesión no se le redirige a ningún lado: el login vive en el panel
         // (React), no en Laravel, así que no existe una ruta "login" a la cual mandarlo.
         // En /api responde 401 y el panel muestra su pantalla de login.
+        $middleware->alias([
+            'admin' => \App\Http\Middleware\EnsureAdmin::class,
+            'company.owner' => \App\Http\Middleware\EnsureCompanyOwner::class,
+        ]);
+
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');
     })
     ->withExceptions(function (Exceptions $exceptions): void {

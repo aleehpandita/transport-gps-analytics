@@ -96,7 +96,7 @@ export function EventsView({ user, onLogout }: EventsViewProps) {
       <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 lg:px-6">
         <h1 className="text-lg font-semibold">Eventos</h1>
         <div className="ml-auto flex flex-wrap items-center gap-3 text-sm">
-          <NavLinks current="events" />
+          <NavLinks current="events" user={user} />
           <span className="text-ink-muted">{user.name}</span>
           <button
             type="button"

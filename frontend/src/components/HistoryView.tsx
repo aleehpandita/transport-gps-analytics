@@ -178,7 +178,7 @@ export function HistoryView({ user, initialVehicleId, initialDate, onLogout }: H
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-3 text-sm text-ink-muted">
-          <NavLinks current="history" />
+          <NavLinks current="history" user={user} />
           <span>{user.name}</span>
           <button type="button" onClick={onLogout} className="rounded-md border border-line px-3 py-1 hover:bg-surface-raised">
             Salir
