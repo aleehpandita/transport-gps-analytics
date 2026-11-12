@@ -30,6 +30,7 @@ class CompaniesTest extends TestCase
 
         // El panel manda Referer de un dominio "stateful" y Sanctum le abre sesión
         $this->withHeader('Referer', 'http://localhost');
+        config(['sanctum.stateful' => ['localhost']]);
         config(['services.traccar' => ['base_url' => 'http://traccar.test', 'username' => 'x', 'password' => 'x']]);
 
         $this->kevs = Company::create(['name' => 'Kevs Trips']);
