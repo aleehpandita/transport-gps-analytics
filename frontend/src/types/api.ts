@@ -373,3 +373,64 @@ export interface OperationDay {
   legs: OperationLeg[]
   unnamed: UnnamedSpot[]
 }
+// Alertas configurables por empresa (fase 2)
+export type AlertType = 'overspeed' | 'geofence_exit' | 'geofence_enter' | 'long_stop' | 'signal_lost' | 'after_hours'
+
+export interface AlertRow {
+  id: number
+  type: AlertType
+  type_label: string
+  rule: { id: number; name: string } | null
+  vehicle: { id: number; name: string } | null
+  triggered_at: string // ISO 8601
+  latitude: number
+  longitude: number
+  value: number | null
+  message: string
+  read_at: string | null
+  email_status: 'sent' | 'failed' | 'skipped' | null
+}
+
+export interface AlertsPage {
+  data: AlertRow[]
+  meta: PageMeta & { unread: number }
+}
+
+export interface AlertRuleSettings {
+  speed_kmh?: number
+  seconds?: number
+  minutes?: number
+  geofence_id?: number
+  except_in_geofences?: boolean
+}
+
+export interface AlertRule {
+  id: number
+  name: string
+  type: AlertType
+  settings: AlertRuleSettings
+  vehicle_ids: number[] | null // null = todas las unidades
+  days: number[] // 1 = lunes ... 7 = domingo
+  time_from: string | null // HH:MM, hora de Cancún
+  time_to: string | null
+  repeat_minutes: number
+  emails: string[]
+  active: boolean
+}
+
+export type AlertRuleInput = Omit<AlertRule, 'id'>
+
+export type GeofenceShape = 'circle' | 'polygon'
+
+export interface Geofence {
+  id: number
+  name: string
+  shape: GeofenceShape
+  latitude: number
+  longitude: number
+  radius_m: number | null
+  points: [number, number][] | null
+  color: string
+}
+
+export type GeofenceInput = Omit<Geofence, 'id'>

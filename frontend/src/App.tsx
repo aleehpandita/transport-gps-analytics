@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AlertsView, type AlertsTab } from './components/AlertsView'
 import { ClientsView } from './components/ClientsView'
 import { CompanyUsersView } from './components/CompanyUsersView'
 import { Dashboard } from './components/Dashboard'
@@ -17,6 +18,7 @@ type AuthState =
 
 // Rutas por hash, sin librería: #/ es el mapa en vivo, #/historial/2/2026-10-21 el historial,
 // #/operacion la operación del día, #/reportes los reportes y #/eventos los eventos y alertas.
+// #/alertas la bandeja de alertas de la empresa (#/alertas/configurar y #/alertas/geocercas).
 // #/clientes es el panel de EkMira (admins) y #/usuarios los usuarios de la empresa (dueños).
 // Con hash, Nginx no necesita configuración extra para que funcione recargar la página.
 type Route =
@@ -24,6 +26,7 @@ type Route =
   | { page: 'operation' }
   | { page: 'reports' }
   | { page: 'events' }
+  | { page: 'alerts'; tab: AlertsTab }
   | { page: 'clients' }
   | { page: 'users' }
   | { page: 'history'; vehicleId: number | null; date: string | null }
@@ -31,6 +34,9 @@ type Route =
 function parseHash(hash: string): Route {
   if (hash.startsWith('#/reportes')) return { page: 'reports' }
   if (hash.startsWith('#/eventos')) return { page: 'events' }
+  if (hash.startsWith('#/alertas/configurar')) return { page: 'alerts', tab: 'rules' }
+  if (hash.startsWith('#/alertas/geocercas')) return { page: 'alerts', tab: 'geofences' }
+  if (hash.startsWith('#/alertas')) return { page: 'alerts', tab: 'inbox' }
   if (hash.startsWith('#/operacion')) return { page: 'operation' }
   if (hash.startsWith('#/clientes')) return { page: 'clients' }
   if (hash.startsWith('#/usuarios')) return { page: 'users' }
@@ -104,6 +110,10 @@ export default function App() {
 
   if (route.page === 'operation') {
     return <OperationsView user={auth.user} onLogout={handleLogout} />
+  }
+
+  if (route.page === 'alerts') {
+    return <AlertsView user={auth.user} tab={route.tab} onLogout={handleLogout} />
   }
 
   if (route.page === 'events') {

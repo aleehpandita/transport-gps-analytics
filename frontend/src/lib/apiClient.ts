@@ -1,4 +1,11 @@
 import type {
+  AlertRule,
+  AlertRuleInput,
+  AlertRow,
+  AlertsPage,
+  AlertType,
+  Geofence,
+  GeofenceInput,
   AdminCompany,
   AdminCompanyDetail,
   AdminVehicle,
@@ -280,3 +287,47 @@ export const resetCompanyUserPassword = (id: number) =>
   postJson<{ data: AccountUser }>(`/company/users/${id}/reset-password`).then((r) => r.data)
 
 export const deleteCompanyUser = (id: number) => sendJson<{ message: string }>('DELETE', `/company/users/${id}`)
+
+// Alertas de la empresa: bandeja, reglas y geocercas
+export interface AlertFilters {
+  status: 'unread' | 'all'
+  type: AlertType | null
+  vehicleId: number | null
+}
+
+export function fetchAlerts(filters: AlertFilters, page: number, signal?: AbortSignal) {
+  const params = new URLSearchParams({ status: filters.status, page: String(page) })
+  if (filters.type) params.set('type', filters.type)
+  if (filters.vehicleId) params.set('vehicle_id', String(filters.vehicleId))
+  return getJson<AlertsPage>(`/alerts?${params}`, signal)
+}
+
+export const fetchUnreadAlerts = (signal?: AbortSignal) =>
+  getJson<{ data: { unread: number } }>('/alerts/unread-count', signal).then((r) => r.data.unread)
+
+export const markAlertRead = (id: number) => postJson<{ data: AlertRow }>(`/alerts/${id}/read`).then((r) => r.data)
+
+export const markAllAlertsRead = () => postJson<{ data: { marked: number } }>('/alerts/read-all').then((r) => r.data)
+
+export const fetchAlertRules = (signal?: AbortSignal) =>
+  getJson<Collection<AlertRule>>('/alert-rules', signal).then((r) => r.data)
+
+export const createAlertRule = (input: AlertRuleInput) =>
+  postJson<{ data: AlertRule }>('/alert-rules', input).then((r) => r.data)
+
+export const updateAlertRule = (id: number, input: AlertRuleInput | { active: boolean }) =>
+  sendJson<{ data: AlertRule }>('PATCH', `/alert-rules/${id}`, input).then((r) => r.data)
+
+export const deleteAlertRule = (id: number) => sendJson<{ message: string }>('DELETE', `/alert-rules/${id}`)
+
+export const fetchGeofences = (signal?: AbortSignal) =>
+  getJson<Collection<Geofence>>('/geofences', signal).then((r) => r.data)
+
+export const createGeofence = (input: Partial<GeofenceInput> & Pick<GeofenceInput, 'name' | 'shape'>) =>
+  postJson<{ data: Geofence }>('/geofences', input).then((r) => r.data)
+
+export const updateGeofence = (id: number, input: Partial<GeofenceInput>) =>
+  sendJson<{ data: Geofence }>('PATCH', `/geofences/${id}`, input).then((r) => r.data)
+
+export const deleteGeofence = (id: number) => sendJson<{ message: string }>('DELETE', `/geofences/${id}`)
+
