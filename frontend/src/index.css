@@ -45,3 +45,17 @@ body {
 .map-tiles-dark {
   filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.5);
 }
+
+/* Nombre de cada geocerca en el mapa: texto sobre la zona, sin la caja de Leaflet */
+.leaflet-tooltip.geofence-label {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: #fff;
+  font-weight: 600;
+  text-shadow: 0 0 3px #000, 0 0 6px #000;
+}
+.leaflet-tooltip.geofence-label::before {
+  display: none;
+}
+
