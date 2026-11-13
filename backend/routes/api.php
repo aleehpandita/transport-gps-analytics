@@ -3,9 +3,12 @@
 use App\Http\Controllers\Api\Admin\CompanyController as AdminCompanyController;
 use App\Http\Controllers\Api\Admin\UserAdminController;
 use App\Http\Controllers\Api\Admin\VehicleAdminController;
+use App\Http\Controllers\Api\AlertController;
+use App\Http\Controllers\Api\AlertRuleController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyUserController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\GeofenceController;
 use App\Http\Controllers\Api\LiveVehicleController;
 use App\Http\Controllers\Api\OperationController;
 use App\Http\Controllers\Api\PlaceController;
@@ -58,6 +61,26 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('scheduled-services')->group(function () {
         Route::get('/', [ScheduledServiceController::class, 'index']);
         Route::post('/', [ScheduledServiceController::class, 'store']);
+    });
+
+    // Alertas de la empresa: bandeja, reglas y geocercas. Un admin primero elige un
+    // cliente con "Ver como". Leer lo puede cualquiera de la empresa; cambiar, quien no
+    // es de solo consulta (lo revisa cada controlador).
+    Route::get('/alerts/unread-count', [AlertController::class, 'unreadCount']);
+    Route::middleware('company.context')->group(function () {
+        Route::get('/alerts', [AlertController::class, 'index']);
+        Route::post('/alerts/read-all', [AlertController::class, 'markAllRead']);
+        Route::post('/alerts/{alert}/read', [AlertController::class, 'markRead']);
+
+        Route::get('/alert-rules', [AlertRuleController::class, 'index']);
+        Route::post('/alert-rules', [AlertRuleController::class, 'store']);
+        Route::patch('/alert-rules/{alertRule}', [AlertRuleController::class, 'update']);
+        Route::delete('/alert-rules/{alertRule}', [AlertRuleController::class, 'destroy']);
+
+        Route::get('/geofences', [GeofenceController::class, 'index']);
+        Route::post('/geofences', [GeofenceController::class, 'store']);
+        Route::patch('/geofences/{geofence}', [GeofenceController::class, 'update']);
+        Route::delete('/geofences/{geofence}', [GeofenceController::class, 'destroy']);
     });
 
     // El dueño de cada empresa administra a sus usuarios
