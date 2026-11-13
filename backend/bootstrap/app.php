@@ -24,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\EnsureAdmin::class,
             'company.owner' => \App\Http\Middleware\EnsureCompanyOwner::class,
+            'company.context' => \App\Http\Middleware\EnsureCompanyContext::class,
         ]);
 
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');
