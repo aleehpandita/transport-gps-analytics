@@ -24,6 +24,9 @@ Artisan::command('inspire', function () {
 | - Eventos cada minuto: solo lee las posiciones nuevas de cada unidad, así que
 |   es barato; cada minuto también revisa lo que depende del reloj (sin señal,
 |   parada larga sin posiciones nuevas). Umbrales en config/alerts.php.
+| - Alertas de los clientes cada minuto: las reglas que cada empresa configura en
+|   el panel (velocidad, geocercas, parada larga, sin señal, fuera de horario).
+|   Igual que los eventos, solo lee lo nuevo. Manda los correos en la misma corrida.
 */
 
 // 10 h: cubre el retraso más largo medido (8.4 h). Los huecos más grandes (servidor o
@@ -39,6 +42,11 @@ Schedule::command('trips:build')
     ->appendOutputTo(storage_path('logs/scheduler.log'));
 
 Schedule::command('events:detect')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+Schedule::command('alerts:check')
     ->everyMinute()
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/scheduler.log'));

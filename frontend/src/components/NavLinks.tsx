@@ -2,11 +2,11 @@
 // Los enlaces de administración dependen del rol: Clientes para el equipo de EkMira,
 // Usuarios para el dueño de una empresa.
 
-import { useState } from 'react'
-import { viewAsCompany } from '../lib/apiClient'
+import { useEffect, useState } from 'react'
+import { fetchUnreadAlerts, viewAsCompany } from '../lib/apiClient'
 import type { User } from '../types/api'
 
-export type Page = 'live' | 'history' | 'operation' | 'reports' | 'events' | 'clients' | 'users'
+export type Page = 'live' | 'history' | 'operation' | 'reports' | 'events' | 'alerts' | 'clients' | 'users'
 
 interface NavLink {
   page: Page
@@ -49,6 +49,13 @@ const LINKS: NavLink[] = [
     page: 'events',
     href: '#/eventos',
     label: 'Eventos',
+    // Lista
+    icon: 'M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01',
+  },
+  {
+    page: 'alerts',
+    href: '#/alertas',
+    label: 'Alertas',
     // Campana
     icon: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10.3 21a1.9 1.9 0 0 0 3.4 0',
   },
@@ -70,8 +77,35 @@ const LINKS: NavLink[] = [
   },
 ]
 
+// Cada cuánto se revisa si hay alertas nuevas para el número del menú
+const UNREAD_REFRESH_MS = 60_000
+
+function useUnreadAlerts(user?: User): number {
+  const [unread, setUnread] = useState(0)
+  // Solo quien ve una empresa tiene bandeja (un admin, cuando está "viendo como")
+  const enabled = Boolean(user && (user.company || user.acting_company))
+
+  useEffect(() => {
+    if (!enabled) return
+    const controller = new AbortController()
+    const load = () =>
+      fetchUnreadAlerts(controller.signal)
+        .then(setUnread)
+        .catch(() => {})
+    load()
+    const id = window.setInterval(load, UNREAD_REFRESH_MS)
+    return () => {
+      controller.abort()
+      window.clearInterval(id)
+    }
+  }, [enabled])
+
+  return enabled ? unread : 0
+}
+
 export function NavLinks({ current, user }: { current: Page; user?: User }) {
   const links = LINKS.filter((link) => !link.visible || (user && link.visible(user)))
+  const unread = useUnreadAlerts(user)
 
   return (
     <nav aria-label="Secciones" className="flex flex-wrap items-center gap-2">
@@ -102,6 +136,7 @@ export function NavLinks({ current, user }: { current: Page; user?: User }) {
           >
             {icon}
             {link.label}
+            {link.page === 'alerts' && <UnreadBadge count={unread} />}
           </span>
         ) : (
           <a
@@ -111,12 +146,22 @@ export function NavLinks({ current, user }: { current: Page; user?: User }) {
           >
             {icon}
             {link.label}
+            {link.page === 'alerts' && <UnreadBadge count={unread} />}
           </a>
         )
       })}
     </nav>
   )
 }
+function UnreadBadge({ count }: { count: number }) {
+  if (count === 0) return null
+  return (
+    <span className="rounded-full bg-late px-1.5 text-xs font-semibold text-white tabular-nums" aria-label={`${count} sin leer`}>
+      {count > 99 ? '99+' : count}
+    </span>
+  )
+}
+
 // Un admin viendo el panel como un cliente: siempre visible para no confundirse de empresa
 function ViewingAs({ name }: { name: string }) {
   const [busy, setBusy] = useState(false)
