@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\ExportsReports;
 use App\Http\Controllers\Controller;
 use App\Models\Trip;
 use App\Services\TripPlaceResolver;
@@ -22,13 +23,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *   GET /api/reports/stops?from=...&to=...&page=1
  *
  * - Viajes y paradas van paginados, con los totales de TODO el periodo en "totals".
- * - Con format=csv se descarga todo, sin paginar, armado por bloques para no cargar miles de
- *   viajes en memoria.
+ * - Con format=csv (o xlsx, que el panel convierte a Excel) se descarga todo, sin paginar.
+ *   El CSV se arma por bloques para no cargar miles de viajes en memoria.
  * - Los días se cortan en hora de Cancún, y solo salen las unidades del usuario.
  */
 class ReportController extends Controller
 {
-    protected const TIMEZONE = 'America/Cancun';
+    use ExportsReports;
+
     // Rango máximo por consulta: dos meses
     protected const MAX_DAYS = 62;
     // Igual que el panel: movimientos más cortos no cuentan como viaje en el resumen
@@ -76,10 +78,11 @@ class ReportController extends Controller
             ->sortBy(fn (array $r) => $r['date'] . '|' . $r['vehicle'])
             ->values();
 
-        if ($f['format'] === 'csv') {
-            return $this->csv($this->filename('resumen-diario', $f),
-                ['Unidad', 'Fecha', 'Viajes', 'Km', 'Tiempo en ruta (min)', 'Primera salida', 'Última llegada', 'Jornada (min)', 'Paradas', 'Tiempo detenido (min)', 'Velocidad máx (km/h)'],
-                function () use ($rows) {
+        if ($f['format'] !== 'json') {
+            return $this->export($f['format'], $this->filename('resumen-diario', $f), [[
+                'name' => 'Resumen diario',
+                'headers' => ['Unidad', 'Fecha', 'Viajes', 'Km', 'Tiempo en ruta (min)', 'Primera salida', 'Última llegada', 'Jornada (min)', 'Paradas', 'Tiempo detenido (min)', 'Velocidad máx (km/h)'],
+                'rows' => function () use ($rows) {
                     foreach ($rows as $r) {
                         yield [
                             $r['vehicle'], $r['date'], $r['trips'], $r['km'], round($r['driving_seconds'] / 60),
@@ -88,7 +91,7 @@ class ReportController extends Controller
                         ];
                     }
                 },
-            );
+            ]]);
         }
 
         return response()->json(['data' => $rows]);
@@ -103,10 +106,11 @@ class ReportController extends Controller
         $base = $this->tripsQuery($f);
         $query = (clone $base)->where('distance_km', '>=', $f['min_km']);
 
-        if ($f['format'] === 'csv') {
-            return $this->csv($this->filename('viajes', $f),
-                ['Unidad', 'Fecha', 'Salida', 'Llegada', 'Origen', 'Destino', 'Km', 'Duración (min)', 'Velocidad máx (km/h)'],
-                function () use ($query, $f) {
+        if ($f['format'] !== 'json') {
+            return $this->export($f['format'], $this->filename('viajes', $f), [[
+                'name' => 'Viajes',
+                'headers' => ['Unidad', 'Fecha', 'Salida', 'Llegada', 'Origen', 'Destino', 'Km', 'Duración (min)', 'Velocidad máx (km/h)'],
+                'rows' => function () use ($query, $f) {
                     // Por bloques: los lugares se resuelven bloque por bloque, nunca todo junto
                     foreach ($query->with(['originZone', 'destinationZone'])->lazy(self::CSV_CHUNK)->chunk(self::CSV_CHUNK) as $chunk) {
                         foreach ($this->tripRows($chunk->collect(), $f) as $r) {
@@ -118,7 +122,7 @@ class ReportController extends Controller
                         }
                     }
                 },
-            );
+            ]]);
         }
 
         // Totales del periodo completo, no de la página
@@ -162,10 +166,11 @@ class ReportController extends Controller
         }
         $stops = $stops->sortBy(fn ($s) => $s['before']->ended_at->getTimestamp())->values();
 
-        if ($f['format'] === 'csv') {
-            return $this->csv($this->filename('paradas', $f),
-                ['Unidad', 'Fecha', 'Desde', 'Hasta', 'Duración (min)', 'Lugar', 'Zona'],
-                function () use ($stops, $f) {
+        if ($f['format'] !== 'json') {
+            return $this->export($f['format'], $this->filename('paradas', $f), [[
+                'name' => 'Paradas',
+                'headers' => ['Unidad', 'Fecha', 'Desde', 'Hasta', 'Duración (min)', 'Lugar', 'Zona'],
+                'rows' => function () use ($stops, $f) {
                     foreach ($stops->chunk(self::CSV_CHUNK) as $chunk) {
                         foreach ($this->stopRows($chunk, $f) as $r) {
                             yield [
@@ -175,7 +180,7 @@ class ReportController extends Controller
                         }
                     }
                 },
-            );
+            ]]);
         }
 
         $total = $stops->count();
@@ -247,7 +252,7 @@ class ReportController extends Controller
             'from' => ['required', 'date_format:Y-m-d'],
             'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
             'vehicle_id' => ['nullable', 'integer'],
-            'format' => ['nullable', Rule::in(['json', 'csv'])],
+            'format' => ['nullable', Rule::in(['json', 'csv', 'xlsx'])],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:10', 'max:500'],
             'min_km' => ['nullable', 'numeric', 'min:0'],
@@ -297,35 +302,6 @@ class ReportController extends Controller
 
     protected function filename(string $name, array $f): string
     {
-        return "{$name}_{$f['from']->toDateString()}_{$f['to']->toDateString()}.csv";
-    }
-
-    protected function localDate($time): string
-    {
-        return CarbonImmutable::parse($time)->tz(self::TIMEZONE)->toDateString();
-    }
-
-    protected function localTime(string $iso): string
-    {
-        return CarbonImmutable::parse($iso)->tz(self::TIMEZONE)->format('H:i');
-    }
-
-    /**
-     * CSV para Excel: UTF-8 con BOM (si no, Excel rompe los acentos) y separado por comas.
-     * Las filas llegan de un generador, así que se escriben conforme se arman.
-     *
-     * @param callable(): iterable<array> $rows
-     */
-    protected function csv(string $filename, array $headers, callable $rows): StreamedResponse
-    {
-        return response()->streamDownload(function () use ($headers, $rows) {
-            $out = fopen('php://output', 'w');
-            fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, $headers);
-            foreach ($rows() as $row) {
-                fputcsv($out, $row);
-            }
-            fclose($out);
-        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+        return $this->periodFilename($name, $f['from'], $f['to']);
     }
 }
