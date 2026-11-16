@@ -129,6 +129,23 @@ class TripBuilderService
     protected const ROUND_TRIP_STOP_MIN_KM = 3;
 
     /**
+     * Regla 6b (ida y vuelta lejos): dejadas en la calle a vuelta de rueda. Medido el 12 nov:
+     * T2 → Playa del Carmen → aeropuerto, 110 km. En Playa la unidad nunca se detuvo: fue a
+     * 5-7 km/h unos 5 minutos por las calles del centro mientras bajaban los pasajeros, así
+     * que no hubo una parada de 60 s en 40 m y la regla 6 no tenía dónde cortar. Ese mismo
+     * día, T4 → ferry de Playa → Puerto Morelos (93 km): no volvió al aeropuerto, pero se
+     * regresó 30 km por donde vino.
+     *
+     * Si salió del aeropuerto, el punto más lejano está a ROUND_TRIP_MIN_KM o más, desde ahí
+     * se regresó RETURN_LEG_MIN_KM o más y terminó a la mitad o menos de esa distancia, el
+     * viaje se parte en el punto más lejano, siempre que ahí (en RETURN_SLOW_METERS) haya ido
+     * despacio RETURN_SLOW_SECONDS o más. Una vuelta sin bajar a nadie no va despacio.
+     */
+    protected const RETURN_LEG_MIN_KM = 10;
+    protected const RETURN_SLOW_METERS = 400;
+    protected const RETURN_SLOW_SECONDS = 90;
+
+    /**
      * Segundos de movimiento sostenido requeridos para confirmar inicio de viaje.
      */
     protected int $startConfirmationSeconds;
@@ -563,18 +580,26 @@ class TripBuilderService
         $first = $positions[0];
         $last = $positions[count($positions) - 1];
 
-        if (!$candidates
-            || !$this->nearAirport($first)
-            || $this->distanceKm($first, $last) > self::ROUND_TRIP_BACK_KM) {
+        if (!$this->nearAirport($first)) {
             return null;
         }
 
         $farthest = 0;
-        foreach ($positions as $p) {
-            $farthest = max($farthest, $this->distanceKm($first, $p));
+        $farthestIndex = 0;
+        foreach ($positions as $index => $p) {
+            $d = $this->distanceKm($first, $p);
+            if ($d > $farthest) {
+                $farthest = $d;
+                $farthestIndex = $index;
+            }
         }
         if ($farthest < self::ROUND_TRIP_MIN_KM) {
             return null;
+        }
+
+        $backToStart = $this->distanceKm($first, $last);
+        if (!$candidates || $backToStart > self::ROUND_TRIP_BACK_KM) {
+            return $this->slowFarthestPoint($positions, $farthestIndex, $farthest, $backToStart);
         }
 
         $best = null;
@@ -585,7 +610,49 @@ class TripBuilderService
             }
         }
 
-        return $best ? [$best[0], $best[1]] : null;
+        return $best
+            ? [$best[0], $best[1]]
+            : $this->slowFarthestPoint($positions, $farthestIndex, $farthest, $backToStart);
+    }
+
+    /**
+     * Regla 6b: el tramo lento alrededor del punto más lejano, si el viaje se regresó desde
+     * ahí. [primera posición lenta, última posición lenta] o null.
+     *
+     * @param Position[] $positions
+     * @return array{0: int, 1: int}|null
+     */
+    protected function slowFarthestPoint(array $positions, int $farthestIndex, float $farthest, float $backToStart): ?array
+    {
+        $tip = $positions[$farthestIndex];
+        $last = $positions[count($positions) - 1];
+
+        if ($this->distanceKm($tip, $last) < self::RETURN_LEG_MIN_KM || $backToStart > $farthest / 2) {
+            return null;
+        }
+
+        $near = fn (int $i) => $this->distanceKm($positions[$i], $tip) * 1000 <= self::RETURN_SLOW_METERS;
+        $from = $farthestIndex;
+        while ($from > 0 && $near($from - 1)) {
+            $from--;
+        }
+        $to = $farthestIndex;
+        while ($to < count($positions) - 1 && $near($to + 1)) {
+            $to++;
+        }
+
+        $slowSeconds = 0;
+        $firstSlow = null;
+        $lastSlow = null;
+        for ($i = $from; $i < $to; $i++) {
+            if ($positions[$i]->speed < self::TURN_SLOW_KMH) {
+                $slowSeconds += abs($positions[$i + 1]->device_time->diffInSeconds($positions[$i]->device_time));
+                $firstSlow ??= $i;
+                $lastSlow = $i + 1;
+            }
+        }
+
+        return $slowSeconds >= self::RETURN_SLOW_SECONDS ? [$firstSlow, $lastSlow] : null;
     }
 
     /**
