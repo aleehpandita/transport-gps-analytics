@@ -13,6 +13,10 @@ import type {
   CompanyRole,
   Collection,
   DailyReportRow,
+  AlertsReport,
+  DistanceReport,
+  GeofenceVisitsReport,
+  ReportSheets,
   EventsPage,
   OperationDay,
   ReviewStatus,
@@ -159,19 +163,27 @@ export interface ReportFilters {
   vehicleId: number | null
 }
 
-export type ReportKind = 'daily' | 'trips' | 'stops'
+// daily, trips y stops: cualquier usuario. Los demás son de la empresa (EkMira BASE): un
+// admin primero elige un cliente con "Ver como".
+export type ReportKind = 'daily' | 'trips' | 'stops' | 'geofence-visits' | 'distance' | 'alerts'
 
-// Página y filtro de km mínimos; solo aplican a viajes y paradas
+export const COMPANY_REPORTS: ReportKind[] = ['geofence-visits', 'distance', 'alerts']
+
+// Página y filtros propios de cada reporte
 export interface ReportPageOptions {
   page?: number
-  minKm?: number
+  minKm?: number // viajes
+  geofenceId?: number | null // entradas y salidas
+  alertType?: AlertType | null // alertas
 }
 
-function reportPath(kind: ReportKind, filters: ReportFilters, options: ReportPageOptions = {}, format?: 'csv'): string {
+function reportPath(kind: ReportKind, filters: ReportFilters, options: ReportPageOptions = {}, format?: 'csv' | 'xlsx'): string {
   const params = new URLSearchParams({ from: filters.from, to: filters.to })
   if (filters.vehicleId !== null) params.set('vehicle_id', String(filters.vehicleId))
   if (options.page && options.page > 1) params.set('page', String(options.page))
   if (options.minKm && options.minKm > 0) params.set('min_km', String(options.minKm))
+  if (options.geofenceId) params.set('geofence_id', String(options.geofenceId))
+  if (options.alertType) params.set('type', options.alertType)
   if (format) params.set('format', format)
   return `/reports/${kind}?${params}`
 }
@@ -185,10 +197,23 @@ export const fetchTripsReport = (filters: ReportFilters, options: ReportPageOpti
 export const fetchStopsReport = (filters: ReportFilters, options: ReportPageOptions, signal?: AbortSignal) =>
   getJson<StopsReport>(reportPath('stops', filters, options), signal)
 
+export const fetchGeofenceVisitsReport = (filters: ReportFilters, options: ReportPageOptions, signal?: AbortSignal) =>
+  getJson<GeofenceVisitsReport>(reportPath('geofence-visits', filters, options), signal)
+
+export const fetchDistanceReport = (filters: ReportFilters, signal?: AbortSignal) =>
+  getJson<DistanceReport>(reportPath('distance', filters), signal)
+
+export const fetchAlertsReport = (filters: ReportFilters, options: ReportPageOptions, signal?: AbortSignal) =>
+  getJson<AlertsReport>(reportPath('alerts', filters, options), signal)
+
 // Dirección de descarga del CSV: un enlace normal, la cookie de sesión viaja sola.
-// El CSV trae todo el periodo, sin paginar; solo respeta el filtro de km.
-export const reportCsvUrl = (kind: ReportKind, filters: ReportFilters, minKm = 0) =>
-  `/api${reportPath(kind, filters, { minKm }, 'csv')}`
+// El CSV trae todo el periodo, sin paginar, con los mismos filtros (menos la página).
+export const reportCsvUrl = (kind: ReportKind, filters: ReportFilters, options: ReportPageOptions = {}) =>
+  `/api${reportPath(kind, filters, { ...options, page: 1 }, 'csv')}`
+
+// Las hojas del reporte para armar el Excel en el navegador (lib/excel.ts)
+export const fetchReportSheets = (kind: ReportKind, filters: ReportFilters, options: ReportPageOptions = {}) =>
+  getJson<ReportSheets>(reportPath(kind, filters, { ...options, page: 1 }, 'xlsx'))
 
 // Eventos por periodo. type null = todos; 'alerts' = exceso, parada larga y sin señal.
 export type EventFilter = VehicleEventType | 'alerts' | null
