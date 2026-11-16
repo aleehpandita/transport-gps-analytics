@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\AlertRuleController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyUserController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\FleetReportController;
 use App\Http\Controllers\Api\GeofenceController;
 use App\Http\Controllers\Api\LiveVehicleController;
 use App\Http\Controllers\Api\OperationController;
@@ -63,7 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [ScheduledServiceController::class, 'store']);
     });
 
-    // Alertas de la empresa: bandeja, reglas y geocercas. Un admin primero elige un
+    // Alertas de la empresa: bandeja, reglas, geocercas y sus reportes. Un admin primero elige un
     // cliente con "Ver como". Leer lo puede cualquiera de la empresa; cambiar, quien no
     // es de solo consulta (lo revisa cada controlador).
     Route::get('/alerts/unread-count', [AlertController::class, 'unreadCount']);
@@ -81,6 +82,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/geofences', [GeofenceController::class, 'store']);
         Route::patch('/geofences/{geofence}', [GeofenceController::class, 'update']);
         Route::delete('/geofences/{geofence}', [GeofenceController::class, 'destroy']);
+
+        // Reportes de la empresa: entradas y salidas de geocercas, distancia y alertas
+        Route::get('/reports/geofence-visits', [FleetReportController::class, 'geofenceVisits']);
+        Route::get('/reports/distance', [FleetReportController::class, 'distance']);
+        Route::get('/reports/alerts', [FleetReportController::class, 'alerts']);
     });
 
     // El dueño de cada empresa administra a sus usuarios

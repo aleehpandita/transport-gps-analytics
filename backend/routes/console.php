@@ -50,3 +50,19 @@ Schedule::command('alerts:check')
     ->everyMinute()
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+/*
+| Entradas y salidas de geocercas (reporte de PDI): cada 5 minutos lo nuevo. Cada
+| madrugada se recalcula desde ayer, para incluir posiciones que llegaron atrasadas
+| (el cálculo incremental solo lee lo que es más nuevo que lo último que leyó).
+*/
+Schedule::command('geofences:visits')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
+
+Schedule::command('geofences:visits', ['--from' => now('America/Cancun')->subDay()->toDateString()])
+    ->dailyAt('04:20')
+    ->timezone('America/Cancun')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/scheduler.log'));
