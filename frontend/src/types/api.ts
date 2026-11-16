@@ -270,6 +270,80 @@ export interface StopReportTotals {
 export type TripsReport = ReportPage<TripReportRow, TripReportTotals>
 export type StopsReport = ReportPage<StopReportRow, StopReportTotals>
 
+// GET /api/reports/geofence-visits: entradas y salidas de las geocercas del cliente
+export interface GeofenceVisitRow {
+  id: number
+  vehicle_id: number
+  vehicle: string
+  geofence_id: number
+  geofence: string
+  color: string | null
+  entered_at: string
+  exited_at: string | null // null: sigue dentro
+  duration_seconds: number // si sigue dentro, hasta ahora
+  started_inside: boolean // ya estaba dentro al empezar el registro: la entrada es aproximada
+  inside: boolean
+}
+
+export interface GeofenceVisitSummaryRow {
+  vehicle_id: number
+  vehicle: string
+  geofence_id: number
+  geofence: string
+  visits: number
+  duration_seconds: number
+  average_seconds: number
+}
+
+export interface GeofenceVisitsReport extends ReportPage<GeofenceVisitRow, { visits: number; duration_seconds: number }> {
+  summary: GeofenceVisitSummaryRow[]
+  geofences: { id: number; name: string; color: string | null }[]
+}
+
+// GET /api/reports/distance: km por unidad y día de toda la flota (días sin movimiento en 0)
+export interface DistanceRow {
+  vehicle_id: number
+  vehicle: string
+  km: Record<string, number> // por día YYYY-MM-DD
+  trips: Record<string, number>
+  total_km: number
+  total_trips: number
+  active_days: number
+  average_km: number // por día con movimiento
+}
+
+export interface DistanceReport {
+  days: string[]
+  data: DistanceRow[]
+  totals: { km: number; trips: number; by_day: Record<string, number> }
+}
+
+// GET /api/reports/alerts: alertas por unidad y tipo, y la lista paginada
+export interface AlertReportRow {
+  id: number
+  vehicle_id: number
+  vehicle: string
+  type: AlertType
+  type_label: string
+  rule: string | null
+  triggered_at: string
+  message: string
+  value: number | null
+  latitude: number
+  longitude: number
+}
+
+export interface AlertsReport extends ReportPage<AlertReportRow, { by_type: Partial<Record<AlertType, number>>; total: number }> {
+  types: { type: AlertType; label: string }[] // solo los tipos que salieron en el periodo
+  summary: { vehicle_id: number; vehicle: string; counts: Partial<Record<AlertType, number>>; total: number }[]
+}
+
+// format=xlsx: las hojas del reporte; el panel arma el archivo
+export interface ReportSheets {
+  filename: string
+  sheets: { name: string; headers: string[]; rows: (string | number | null)[][] }[]
+}
+
 // GET /api/events: eventos de las unidades, del más reciente al más viejo
 export type VehicleEventType = 'zone_enter' | 'zone_exit' | 'place_visit' | 'overspeed' | 'long_stop' | 'signal_lost'
 
