@@ -23,6 +23,9 @@ class OperationService
     protected const SUGGESTION_METERS = 150;
     // Puntos sin nombre a menos de esto se juntan en una sola sugerencia
     protected const SAME_SPOT_METERS = 60;
+    // Un punto a menos de esto de una terminal cuenta como aeropuerto (T4 recogida, punto de
+    // encuentro), para saber si un viaje marcado a mano fue llegada o salida
+    protected const AIRPORT_METERS = 1000;
 
     protected ?Collection $osm = null;
 
@@ -111,10 +114,14 @@ class OperationService
     {
         $legs = collect($legs);
         $services = $legs->filter(fn ($l) => $l['status'] !== null);
+        // Llegadas y salidas con lo que confirmó una persona, no solo con lo que vio el GPS:
+        // "Sin pasajeros" ya no cuenta y un viaje marcado como servicio cuenta según su
+        // dirección (19 nov: el panel dijo 5 llegadas y 2 salidas; fueron 4 y 4)
+        $counted = $legs->map(fn ($l) => $this->countedKind($l));
 
         return [
-            'arrivals' => $legs->where('kind', OperationClassifier::ARRIVAL)->count(),
-            'departures' => $legs->where('kind', OperationClassifier::DEPARTURE)->count(),
+            'arrivals' => $counted->filter(fn ($k) => $k === OperationClassifier::ARRIVAL)->count(),
+            'departures' => $counted->filter(fn ($k) => $k === OperationClassifier::DEPARTURE)->count(),
             'pending' => $services->where('status', OperationClassifier::PENDING)->count(),
             'confirmed' => $services->where('status', OperationClassifier::CONFIRMED)->count(),
             'km_with_passengers' => round($legs->where('with_passengers', true)->sum('km'), 1),
@@ -130,15 +137,7 @@ class OperationService
     protected function serviceRow(array $leg, Collection $vehicles): array
     {
         // Un viaje que el GPS no tomó como servicio pero alguien marcó como tal
-        $s = $leg['service'] ?? [
-            // Marcado a mano: servicio u otro no-show que el GPS no sospechó
-            'type' => ($leg['review']['status'] ?? null) === OperationClassifier::REVIEW_NO_SHOW ? OperationClassifier::NO_SHOW : 'otro',
-            'hotel' => $leg['destination']['name'],
-            'hotel_point' => [$leg['destination']['lat'], $leg['destination']['lng']],
-            'terminal' => null,
-            'left_at' => $leg['start'],
-            'arrived_at' => $leg['end'],
-        ];
+        $s = $leg['service'] ?? $this->manualService($leg);
 
         $terminal = $s['type'] === OperationClassifier::ARRIVAL ? $leg['origin'] : $leg['destination'];
 
@@ -186,6 +185,90 @@ class OperationService
             'origin_latitude' => $leg['origin']['lat'],
             'origin_longitude' => $leg['origin']['lng'],
         ];
+    }
+
+    /**
+     * Servicio que el GPS no sospechó y alguien marcó a mano. El tipo sale de la dirección del
+     * viaje: aeropuerto → lugar es llegada, lugar → aeropuerto es salida, lugar → lugar es
+     * traslado. Antes quedaba como "otro", con el aeropuerto como hotel en las salidas.
+     */
+    protected function manualService(array $leg): array
+    {
+        $type = ($leg['review']['status'] ?? null) === OperationClassifier::REVIEW_NO_SHOW
+            ? OperationClassifier::NO_SHOW
+            : ($this->kindByDirection($leg) ?? 'otro');
+
+        $hotel = $type === OperationClassifier::DEPARTURE ? $leg['origin'] : $leg['destination'];
+
+        return [
+            'type' => $type,
+            'hotel' => $hotel['name'],
+            'place_id' => $hotel['place_id'] ?? null,
+            'hotel_point' => [$hotel['lat'], $hotel['lng']],
+            'terminal' => null,
+            'left_at' => $leg['start'],
+            'arrived_at' => $leg['end'],
+        ];
+    }
+
+    /**
+     * Llegada o salida para las tarjetas del día, o null si no cuenta. Solo cuentan los viajes
+     * con pasajeros (el clasificador ya aplica las confirmaciones: "Sin pasajeros" y los
+     * dudosos quedan fuera). El tipo es el del GPS; si el GPS lo vio como regreso o vacío y
+     * alguien lo marcó como servicio, sale de la dirección.
+     */
+    protected function countedKind(array $leg): ?string
+    {
+        if (($leg['with_passengers'] ?? false) !== true) {
+            return null;
+        }
+
+        if (in_array($leg['kind'], [OperationClassifier::ARRIVAL, OperationClassifier::DEPARTURE], true)) {
+            return $leg['kind'];
+        }
+
+        if (($leg['review']['status'] ?? null) !== OperationClassifier::REVIEW_SERVICE) {
+            return null;
+        }
+
+        $kind = $this->kindByDirection($leg);
+
+        return in_array($kind, [OperationClassifier::ARRIVAL, OperationClassifier::DEPARTURE], true) ? $kind : null;
+    }
+
+    /** Llegada, salida o traslado según qué punta del viaje es aeropuerto; null si las dos. */
+    protected function kindByDirection(array $leg): ?string
+    {
+        $fromAirport = $this->isAirport($leg['origin']);
+        $toAirport = $this->isAirport($leg['destination']);
+
+        return match (true) {
+            $fromAirport && !$toAirport => OperationClassifier::ARRIVAL,
+            !$fromAirport && $toAirport => OperationClassifier::DEPARTURE,
+            !$fromAirport && !$toAirport => OperationClassifier::TRANSFER,
+            default => null,
+        };
+    }
+
+    protected function isAirport(array $point): bool
+    {
+        if (str_starts_with((string) ($point['type'] ?? ''), 'airport')) {
+            return true;
+        }
+
+        // Un hotel junto al aeropuerto (City Express Aeropuerto, Fairfield Airport) es hotel:
+        // la regla de distancia es solo para puntos del aeropuerto sin tipo de terminal
+        if (($point['lat'] ?? null) === null || ($point['type'] ?? null) === 'hotel') {
+            return false;
+        }
+
+        foreach ($this->terminals as $t) {
+            if ($this->meters($point['lat'], $point['lng'], $t['lat'], $t['lng']) <= self::AIRPORT_METERS) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
