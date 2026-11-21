@@ -2,7 +2,7 @@
 
 Documento vivo del piloto de rastreo GPS en la unidad de prueba. Reúne la configuración del dispositivo, la infraestructura y los hallazgos medidos con datos reales.
 
-Última actualización: 11 de octubre de 2026.
+Última actualización: 20 de noviembre de 2026.
 
 ## Resumen de hallazgos
 
@@ -16,6 +16,8 @@ Medido con las posiciones reales de la unidad piloto (25 al 29 de septiembre de 
 Estos puntos deben resolverse antes de configurar los dispositivos de la flota.
 
 **Actualización 5 nov 2026: resuelto desde el 22 de octubre; ver sección 4.9.**
+
+**Actualización 20 nov 2026:** con la configuración actual, Kevs1 registró 35,843 posiciones en movimiento, una cada 4.9 s en promedio, y una cada 60 min detenida. Con esa frecuencia funcionan los servicios detectados, las alertas y los reportes, así que es la configuración de referencia para los equipos nuevos (ver sección 6).
 
 ## 1. Dispositivo
 
@@ -383,7 +385,9 @@ A una posición cada 6 segundos, una unidad que maneje 10 horas al día genera u
 
 ## 6. Propuesta de configuración para la flota
 
-**Estado: pendiente de validar en la unidad piloto.** No aplicar a la flota sin antes medir el antes y el después en la Tiguan.
+**Estado (20 nov 2026): no se aplicó.** La configuración vigente de Kevs1 (una posición cada 4.9 s en movimiento) es la referencia para los equipos nuevos: se copia con `getparam` en el Configurator. La propuesta de esta sección queda solo como opción si el consumo de datos no alcanza con la SIM de 500 MB; antes de decidir, revisar el consumo mensual de Kevs1 en el portal de 1GLOBAL.
+
+Propuesta original (11 oct 2026):
 
 Tres cambios prioritarios:
 
@@ -425,7 +429,7 @@ Los nombres exactos de los parámetros deben confirmarse en el Configurator para
 
 - [ ] Comparar la unidad piloto (SIM Telcel) contra el primer dispositivo nuevo con SIM de Teltonika.
 - [ ] Validar la propuesta de configuración (sección 6).
-- [ ] Medir los bytes reales por registro y el consumo diario de datos.
+- [ ] Medir el consumo mensual de datos de Kevs1 en el portal de 1GLOBAL y confirmar que alcanza la SIM de 500 MB.
 
 ### Antes de producción
 

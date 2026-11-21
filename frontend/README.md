@@ -1,32 +1,22 @@
-# React + TypeScript + Vite
+# Panel (React + TypeScript + Vite)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Panel de operación de la plataforma. Se compila a archivos estáticos que sirve Nginx con HTTPS.
 
-Currently, two official plugins are available:
+## Vistas
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Mapa en vivo de la flota y estado de cada unidad (Leaflet)
+- Viajes e historial por unidad, con su recorrido
+- Eventos y bandeja de alertas
+- Reglas de alertas y geocercas dibujadas en el mapa
+- Reportes de distancia, entradas y salidas, y alertas, con descarga en Excel
+- Vista adaptada a celular
 
-## React Compiler
+## Arranque local
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev     # desarrollo
+npm run build   # genera dist/ para producción
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+El panel llama al backend en la ruta relativa `/api`, así que en producción se sirve desde el mismo dominio que Laravel.
