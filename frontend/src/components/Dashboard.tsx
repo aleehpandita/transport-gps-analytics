@@ -67,7 +67,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const tripsSummary = selectedVehicle ? (
     <span className="flex items-baseline gap-3">
       <span>
-        <span className="text-white/80">{selectedVehicle.name}:</span> {tripsCount}
+        <span className="text-ink/80">{selectedVehicle.name}:</span> {tripsCount}
       </span>
       <button
         type="button"

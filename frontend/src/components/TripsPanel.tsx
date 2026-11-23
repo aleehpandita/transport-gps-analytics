@@ -54,7 +54,7 @@ export function TripsPanel({ trips, loading, emptyMessage = 'Todavía no hay via
               </p>
             </div>
             <p className="mt-1 text-sm text-ink-muted">
-              {manyVehicles && <span className="text-white/80">{trip.vehicle ?? `Unidad ${trip.vehicle_id}`}: </span>}
+              {manyVehicles && <span className="text-ink/80">{trip.vehicle ?? `Unidad ${trip.vehicle_id}`}: </span>}
               {tripLabel(trip)}
             </p>
           </li>

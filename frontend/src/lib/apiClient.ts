@@ -32,6 +32,7 @@ import type {
   Trip,
   User,
   Vehicle,
+  VehicleIcon,
 } from '../types/api'
 
 export class ApiError extends Error {
@@ -127,6 +128,10 @@ export const login = (email: string, password: string) =>
 export const logout = () => postJson<{ message: string }>('/logout')
 
 export const fetchMe = (signal?: AbortSignal) => getJson<{ data: User }>('/me', signal).then((r) => r.data)
+
+// Tema claro u oscuro del usuario
+export const updateTheme = (theme: 'light' | 'dark') =>
+  sendJson<{ data: User }>('PATCH', '/me/preferences', { theme }).then((r) => r.data)
 
 // Fetchers estables (nivel de módulo) para usarlos con usePolling sin re-crear el efecto
 export const fetchVehicles = (signal: AbortSignal) => getJson<Collection<Vehicle>>('/vehicles', signal).then((r) => r.data)
@@ -281,8 +286,23 @@ export const addCompanyVehicle = (
 
 export const updateAdminVehicle = (
   id: number,
-  input: Partial<{ name: string; plate: string | null; make: string | null; model: string | null; active: boolean; company_id: number | null }>,
+  input: Partial<VehicleEditInput & { make: string | null; model: string | null; active: boolean; company_id: number | null }>,
 ) => sendJson<{ data: AdminVehicle }>('PATCH', `/admin/vehicles/${id}`, input).then((r) => r.data)
+
+// Lo que el dueño (o el admin) cambia de una unidad: nombre, placas e ícono y color en el mapa
+export interface VehicleEditInput {
+  name: string
+  plate: string | null
+  icon: VehicleIcon
+  color: string | null
+}
+
+// El dueño de la empresa: sus unidades
+export const fetchCompanyVehicles = (signal?: AbortSignal) =>
+  getJson<Collection<AdminVehicle>>('/company/vehicles', signal).then((r) => r.data)
+
+export const updateCompanyVehicle = (id: number, input: Partial<VehicleEditInput>) =>
+  sendJson<{ data: AdminVehicle }>('PATCH', `/company/vehicles/${id}`, input).then((r) => r.data)
 
 export const createAdminUser = (companyId: number, input: { name: string; email: string; role: CompanyRole }) =>
   postJson<{ data: AccountUser }>(`/admin/companies/${companyId}/users`, input).then((r) => r.data)

@@ -61,7 +61,7 @@ export function DayTimeline({ trips, playback, selectedTripId, follow, onFollowC
               <div
                 key={trip.id}
                 className={`pointer-events-none absolute inset-y-1 overflow-hidden rounded-[3px] px-1.5 text-[11px] leading-9 whitespace-nowrap ${
-                  selected ? 'bg-ok text-black' : 'bg-ok/35 text-white'
+                  selected ? 'bg-ok text-black' : 'bg-ok/35 text-ink'
                 }`}
                 style={{ left: `${left}%`, width: `${width}%` }}
               >
@@ -94,7 +94,7 @@ export function DayTimeline({ trips, playback, selectedTripId, follow, onFollowC
         </div>
 
         <div className="w-28 shrink-0 text-right tabular-nums">
-          <div className="text-[1rem] font-semibold text-white">{formatClockSeconds(time)}</div>
+          <div className="text-[1rem] font-semibold text-ink">{formatClockSeconds(time)}</div>
           <div className="text-xs text-ink-muted">{playback.frame ? `${Math.round(playback.frame.speed)} km/h` : ''}</div>
         </div>
       </div>

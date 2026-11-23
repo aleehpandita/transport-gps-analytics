@@ -312,7 +312,7 @@ function ReviewEditor({
             aria-checked={choice === o.id}
             title={o.hint}
             onClick={() => setChoice(o.id)}
-            className={`rounded-full border px-3 py-1 ${choice === o.id ? 'border-ok bg-ok/15 font-medium text-white' : 'border-line text-ink-muted hover:bg-surface'}`}
+            className={`rounded-full border px-3 py-1 ${choice === o.id ? 'border-ok bg-ok/15 font-medium text-ink' : 'border-line text-ink-muted hover:bg-surface'}`}
           >
             {o.label}
           </button>
@@ -345,7 +345,7 @@ function ReviewEditor({
             Quitar confirmación
           </button>
         )}
-        <button type="button" onClick={() => onDone(false)} className="px-2 py-1.5 text-ink-muted hover:text-white">
+        <button type="button" onClick={() => onDone(false)} className="px-2 py-1.5 text-ink-muted hover:text-ink">
           Cancelar
         </button>
         {error && <span className="text-late">{error}</span>}
@@ -421,7 +421,7 @@ function ServicesTable({
                     {!s.review && s.reasons.length > 0 && <div className="mt-1 text-risk">{s.reasons.join('. ')}.</div>}
                     {s.review && (
                       <div className="mt-1 text-xs">
-                        {s.review.note && <span className="text-white">“{s.review.note}” </span>}
+                        {s.review.note && <span className="text-ink">“{s.review.note}” </span>}
                         Marcado por {s.review.by ?? 'alguien'}, {formatDayLabel(cancunDateOf(s.review.at))}{' '}
                         {formatClock(s.review.at)}
                       </div>

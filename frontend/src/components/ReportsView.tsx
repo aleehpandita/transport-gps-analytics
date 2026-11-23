@@ -167,7 +167,7 @@ export function ReportsView({ user, onLogout }: ReportsViewProps) {
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
               className={`-mb-px whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium ${
-                tab === t.id ? 'border-ok text-white' : 'border-transparent text-ink-muted hover:text-white'
+                tab === t.id ? 'border-ok text-ink' : 'border-transparent text-ink-muted hover:text-ink'
               }`}
             >
               {t.label}

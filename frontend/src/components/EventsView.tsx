@@ -126,7 +126,7 @@ export function EventsView({ user, onLogout }: EventsViewProps) {
               aria-pressed={active}
               onClick={() => setType(f.id)}
               className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
-                active ? 'border-ok bg-ok/15 font-medium text-white' : 'border-line text-ink-muted hover:bg-surface-raised'
+                active ? 'border-ok bg-ok/15 font-medium text-ink' : 'border-line text-ink-muted hover:bg-surface-raised'
               }`}
             >
               {f.label}

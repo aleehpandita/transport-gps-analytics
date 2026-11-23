@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Position;
+use App\Models\Vehicle;
 use App\Services\ZoneMatchingService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -24,6 +25,8 @@ class VehicleResource extends JsonResource
             'plate' => $this->plate,
             'make' => $this->make,
             'model' => $this->model,
+            'icon' => $this->icon ?? Vehicle::ICON_VAN,
+            'color' => $this->color,
             'active' => $this->active,
             'distance_today_km' => round($this->distance_today_km ?? 0, 2),
             'latest_position' => $this->whenLoaded(
@@ -32,6 +35,13 @@ class VehicleResource extends JsonResource
             ),
             'current_zone' => $this->whenLoaded('latestPosition', fn () => $this->currentZone()),
             'stopped_since' => $this->whenLoaded('latestPosition', fn () => $this->stoppedSince()),
+            // Alerta sin leer de las últimas horas: en el mapa la unidad parpadea como alarma
+            'active_alert' => $this->whenLoaded('activeAlert', fn () => $this->activeAlert ? [
+                'id' => $this->activeAlert->id,
+                'type' => $this->activeAlert->type,
+                'message' => $this->activeAlert->message,
+                'triggered_at' => $this->activeAlert->triggered_at?->toIso8601String(),
+            ] : null),
         ];
     }
 
