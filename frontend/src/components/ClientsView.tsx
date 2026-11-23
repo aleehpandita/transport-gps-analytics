@@ -260,7 +260,7 @@ function VehiclesSection({ company, onChanged }: { company: AdminCompanyDetail; 
     e.preventDefault()
     const ok = await run(() =>
       mode === 'new'
-        ? addCompanyVehicle(company.id, { name: name.trim(), imei: imei.trim(), plate: plate.trim() || null })
+        ? addCompanyVehicle(company.id, { name: name.trim(), imei: imei.trim(), plate: plate.trim().toUpperCase() || null })
         : addCompanyVehicle(company.id, { vehicle_id: Number(existingId) }),
     )
     if (ok) {
@@ -299,32 +299,17 @@ function VehiclesSection({ company, onChanged }: { company: AdminCompanyDetail; 
             </tr>
           )}
           {company.vehicles.map((v) => (
-            <tr key={v.id}>
-              <td className="px-3 py-2">
-                {v.name}
-                {!v.active && <span className="ml-2 text-xs text-ink-muted">(inactiva)</span>}
-              </td>
-              <td className="px-3 py-2 text-ink-muted">{v.plate ?? '—'}</td>
-              <td className="px-3 py-2 font-mono text-xs text-ink-muted">{v.imei ?? '—'}</td>
-              <td className="px-3 py-2">
-                <span className={SIGNAL[v.signal].className}>{SIGNAL[v.signal].label}</span>
-                {v.last_report_at && <span className="ml-2 text-ink-muted">{formatLastSeen(v.last_report_at)}</span>}
-              </td>
-              <td className="px-3 py-2 text-right">
-                <button
-                  type="button"
-                  disabled={busy}
-                  className={`${button} hover:text-late`}
-                  onClick={() => {
-                    if (window.confirm(`¿Quitar ${v.name} de ${company.name}? Su historial se conserva.`)) {
-                      run(() => updateAdminVehicle(v.id, { company_id: null }))
-                    }
-                  }}
-                >
-                  Quitar
-                </button>
-              </td>
-            </tr>
+            <VehicleRow
+              key={v.id}
+              vehicle={v}
+              busy={busy}
+              onSave={(input) => run(() => updateAdminVehicle(v.id, input))}
+              onRemove={() => {
+                if (window.confirm(`¿Quitar ${v.name} de ${company.name}? Su historial se conserva.`)) {
+                  run(() => updateAdminVehicle(v.id, { company_id: null }))
+                }
+              }}
+            />
           ))}
         </tbody>
       </table>
@@ -389,6 +374,92 @@ function VehiclesSection({ company, onChanged }: { company: AdminCompanyDetail; 
         )}
       </form>
     </div>
+  )
+}
+
+// Una unidad de la tabla. "Editar" cambia nombre y placas en la misma fila.
+function VehicleRow({
+  vehicle: v,
+  busy,
+  onSave,
+  onRemove,
+}: {
+  vehicle: AdminVehicle
+  busy: boolean
+  onSave: (input: { name: string; plate: string | null }) => Promise<boolean>
+  onRemove: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(v.name)
+  const [plate, setPlate] = useState(v.plate ?? '')
+
+  function startEdit() {
+    setName(v.name)
+    setPlate(v.plate ?? '')
+    setEditing(true)
+  }
+
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    const ok = await onSave({ name: name.trim(), plate: plate.trim().toUpperCase() || null })
+    if (ok) setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <tr>
+        <td colSpan={5} className="px-3 py-2">
+          <form onSubmit={save} className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-ink-muted">Nombre</span>
+              <input required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} className={input} />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-ink-muted">Placas</span>
+              <input
+                maxLength={20}
+                value={plate}
+                onChange={(e) => setPlate(e.target.value.toUpperCase())}
+                placeholder="ABC123A"
+                className={`${input} uppercase`}
+              />
+            </label>
+            <span className="pb-1.5 font-mono text-xs text-ink-muted">IMEI {v.imei ?? '—'}</span>
+            <div className="ml-auto flex gap-2">
+              <button type="button" disabled={busy} className={button} onClick={() => setEditing(false)}>
+                Cancelar
+              </button>
+              <button type="submit" disabled={busy} className={primary}>
+                Guardar
+              </button>
+            </div>
+          </form>
+        </td>
+      </tr>
+    )
+  }
+
+  return (
+    <tr>
+      <td className="px-3 py-2">
+        {v.name}
+        {!v.active && <span className="ml-2 text-xs text-ink-muted">(inactiva)</span>}
+      </td>
+      <td className="px-3 py-2 text-ink-muted">{v.plate ?? '—'}</td>
+      <td className="px-3 py-2 font-mono text-xs text-ink-muted">{v.imei ?? '—'}</td>
+      <td className="px-3 py-2">
+        <span className={SIGNAL[v.signal].className}>{SIGNAL[v.signal].label}</span>
+        {v.last_report_at && <span className="ml-2 text-ink-muted">{formatLastSeen(v.last_report_at)}</span>}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2 text-right">
+        <button type="button" disabled={busy} className={`${button} mr-2`} onClick={startEdit}>
+          Editar
+        </button>
+        <button type="button" disabled={busy} className={`${button} hover:text-late`} onClick={onRemove}>
+          Quitar
+        </button>
+      </td>
+    </tr>
   )
 }
 
