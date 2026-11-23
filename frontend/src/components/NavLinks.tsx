@@ -1,6 +1,7 @@
 // Navegación entre las páginas del panel. La página actual se marca y no es enlace.
 // Los enlaces de administración dependen del rol: Clientes para el equipo de EkMira,
-// Usuarios para el dueño de una empresa.
+// Usuarios para el dueño de una empresa. Operación solo aparece si la empresa contrató
+// ese módulo.
 
 import { useEffect, useState } from 'react'
 import { fetchUnreadAlerts, viewAsCompany } from '../lib/apiClient'
@@ -37,6 +38,8 @@ const LINKS: NavLink[] = [
     label: 'Operación',
     // Tablilla con lista
     icon: 'M9 4h6v3H9z M9 5H6v16h12V5h-3 M9 11h6 M9 15h6',
+    // Módulo aparte de la BASE: solo si la empresa lo contrató
+    visible: (user) => user.has_operation,
   },
   {
     page: 'reports',

@@ -129,6 +129,9 @@ export interface User {
   email: string
   role: UserRole
   can_edit: boolean // confirmar servicios y marcar viajes (todos menos solo lectura)
+  // Módulo de Operación de la empresa que ve (en "Ver como", la del cliente). Sin él solo
+  // tiene la BASE: no ve la pestaña Operación ni las Predicciones de llegada.
+  has_operation: boolean
   company: CompanyRef | null
   acting_company: CompanyRef | null // solo admins: la empresa que está viendo como cliente
 }
@@ -171,6 +174,7 @@ export interface AdminCompany {
   contact_phone: string | null
   plan: string | null
   monthly_price: number | null
+  operation_module: boolean // contrató el módulo de Operación, además de la BASE
   status: 'active' | 'suspended'
   notes: string | null
   created_at: string | null

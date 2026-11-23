@@ -16,7 +16,7 @@ use Illuminate\Validation\Rule;
  *   GET   /api/admin/companies              todas, con conteo de unidades, usuarios y equipos sin señal
  *   POST  /api/admin/companies              alta de empresa
  *   GET   /api/admin/companies/{company}    detalle con unidades y usuarios
- *   PATCH /api/admin/companies/{company}    editar datos, plan o suspender
+ *   PATCH /api/admin/companies/{company}    editar datos, plan, módulo de Operación o suspender
  *   POST  /api/admin/view-as                {company_id|null}: ver el panel como esa empresa
  */
 class CompanyController extends Controller
@@ -106,6 +106,7 @@ class CompanyController extends Controller
             'contact_phone' => ['nullable', 'string', 'max:30'],
             'plan' => ['nullable', 'string', 'max:50'],
             'monthly_price' => ['nullable', 'numeric', 'min:0', 'max:100000'],
+            'operation_module' => ['sometimes', 'boolean'],
             'status' => ['sometimes', Rule::in(Company::STATUSES)],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
@@ -123,6 +124,7 @@ class CompanyController extends Controller
             'contact_phone' => $company->contact_phone,
             'plan' => $company->plan,
             'monthly_price' => $company->monthly_price !== null ? (float) $company->monthly_price : null,
+            'operation_module' => $company->hasOperationModule(),
             'status' => $company->status,
             'notes' => $company->notes,
             'created_at' => $company->created_at?->toIso8601String(),
