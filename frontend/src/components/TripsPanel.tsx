@@ -10,6 +10,7 @@ const SHORT_TRIP_KM = 2
 interface TripsPanelProps {
   trips: Trip[]
   loading: boolean
+  emptyMessage?: string // por ejemplo, cuando se filtró a una sola unidad
 }
 
 // Duración legible: "15 min", o "1 h 05 min" a partir de una hora
@@ -22,7 +23,7 @@ function formatDuration(seconds: number): string {
   return `${hours} h ${String(minutes).padStart(2, '0')} min`
 }
 
-export function TripsPanel({ trips, loading }: TripsPanelProps) {
+export function TripsPanel({ trips, loading, emptyMessage = 'Todavía no hay viajes registrados hoy.' }: TripsPanelProps) {
   const [showShort, setShowShort] = useState(false)
 
   if (loading && trips.length === 0) {
@@ -30,7 +31,7 @@ export function TripsPanel({ trips, loading }: TripsPanelProps) {
   }
 
   if (trips.length === 0) {
-    return <p className="px-5 py-6 text-sm text-ink-muted">Todavía no hay viajes registrados hoy.</p>
+    return <p className="px-5 py-6 text-sm text-ink-muted">{emptyMessage}</p>
   }
 
   const visible = showShort ? trips : trips.filter((t) => t.distance_km >= SHORT_TRIP_KM)

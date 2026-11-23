@@ -16,7 +16,7 @@ import {
 } from '../lib/apiClient'
 import { formatKm } from '../lib/format'
 import { ROLE_LABEL } from '../lib/roles'
-import type { LivePosition, User, Vehicle } from '../types/api'
+import type { LivePosition, ScheduledService, User, Vehicle } from '../types/api'
 
 const VEHICLES_INTERVAL_MS = 15_000
 // Posición en vivo: el FMC920 envía cada 10 s en movimiento (Send Period 10055/10155/10255)
@@ -30,6 +30,10 @@ const ZONES_INTERVAL_MS = 10 * 60_000
 // Mismo umbral que vehicleStatus.ts: menos de 3 km/h cuenta como detenida
 const IDLE_SPEED_KMH = 3
 
+// Sin módulo de Operación no hay servicios programados: no se le pregunta a la API.
+// Vive fuera del componente para que usePolling reciba siempre la misma función.
+const noScheduledServices = (): Promise<ScheduledService[]> => Promise.resolve([])
+
 interface DashboardProps {
   user: User
   onLogout: () => void
@@ -40,7 +44,7 @@ interface DashboardProps {
 export function Dashboard({ user, onLogout }: DashboardProps) {
   const vehicles = usePolling(fetchVehicles, VEHICLES_INTERVAL_MS)
   const live = usePolling(fetchLiveVehicles, LIVE_INTERVAL_MS)
-  const services = usePolling(fetchScheduledServices, SERVICES_INTERVAL_MS)
+  const services = usePolling(user.has_operation ? fetchScheduledServices : noScheduledServices, SERVICES_INTERVAL_MS)
   const trips = usePolling(fetchTodayTrips, TRIPS_INTERVAL_MS)
   const zones = usePolling(fetchZones, ZONES_INTERVAL_MS)
 
@@ -52,9 +56,30 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   // La flota de la base (cada 15 s) con la posición en vivo encima (cada 5 s).
   // Así el mapa, la tabla y el encabezado ven la misma posición.
   const fleet = useMemo(() => withLivePositions(vehicles.data ?? [], live.data ?? []), [vehicles.data, live.data])
-  const todayTrips = trips.data ?? []
+
+  // Viajes de hoy: los de toda la flota, o solo los de la unidad elegida en la tabla.
+  // Las tarjetas del encabezado (En ruta, Con señal, Recorrido hoy) siempre son de toda la flota.
+  const selectedVehicle = mapFocus ? (fleet.find((v) => v.id === mapFocus.id) ?? null) : null
+  const allTrips = trips.data ?? []
+  const todayTrips = selectedVehicle ? allTrips.filter((t) => t.vehicle_id === selectedVehicle.id) : allTrips
   const todayKm = todayTrips.reduce((sum, trip) => sum + trip.distance_km, 0)
-  const tripsSummary = `${todayTrips.length} ${todayTrips.length === 1 ? 'viaje' : 'viajes'}, ${formatKm(todayKm)}`
+  const tripsCount = `${todayTrips.length} ${todayTrips.length === 1 ? 'viaje' : 'viajes'}, ${formatKm(todayKm)}`
+  const tripsSummary = selectedVehicle ? (
+    <span className="flex items-baseline gap-3">
+      <span>
+        <span className="text-white/80">{selectedVehicle.name}:</span> {tripsCount}
+      </span>
+      <button
+        type="button"
+        onClick={() => setMapFocus(null)}
+        className="rounded border border-line px-2 py-0.5 hover:bg-surface-raised"
+      >
+        Ver todas
+      </button>
+    </span>
+  ) : (
+    tripsCount
+  )
 
   return (
     <div className="flex min-h-full flex-col">
@@ -102,16 +127,23 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
-          <Panel index={3} title="Predicciones de llegada">
-            <ArrivalsPanel
-              services={services.data ?? []}
-              vehicles={fleet}
-              loading={services.loading}
-            />
-          </Panel>
+          {/* Módulo de Operación: las predicciones salen de los servicios programados */}
+          {user.has_operation && (
+            <Panel index={3} title="Predicciones de llegada">
+              <ArrivalsPanel
+                services={services.data ?? []}
+                vehicles={fleet}
+                loading={services.loading}
+              />
+            </Panel>
+          )}
 
-          <Panel index={4} title="Viajes de hoy" aside={tripsSummary}>
-            <TripsPanel trips={todayTrips} loading={trips.loading} />
+          <Panel index={user.has_operation ? 4 : 3} title="Viajes de hoy" aside={tripsSummary}>
+            <TripsPanel
+              trips={todayTrips}
+              loading={trips.loading}
+              emptyMessage={selectedVehicle ? `${selectedVehicle.name} todavía no tiene viajes hoy.` : undefined}
+            />
           </Panel>
         </div>
       </main>

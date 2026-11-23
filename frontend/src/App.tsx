@@ -108,7 +108,9 @@ export default function App() {
     return <CompanyUsersView user={auth.user} onLogout={handleLogout} />
   }
 
-  if (route.page === 'operation') {
+  // Módulo aparte de la BASE: sin él, #/operacion se queda en el mapa como cualquier ruta
+  // que no existe
+  if (route.page === 'operation' && auth.user.has_operation) {
     return <OperationsView user={auth.user} onLogout={handleLogout} />
   }
 

@@ -148,6 +148,25 @@ class User extends Authenticatable
         return $query->whereIn($column, $this->visibleVehicles()->select('vehicles.id'));
     }
 
+    /**
+     * Ve el módulo de Operación en el panel. Depende de la empresa que está viendo:
+     *   - admin sin "Ver como": sí, ve todo.
+     *   - admin "viendo como" una empresa, o usuario de una empresa: solo si esa empresa
+     *     contrató el módulo. Así el admin ve el panel tal como lo ve el cliente.
+     *   - usuario sin empresa: no.
+     */
+    public function hasOperationModule(): bool
+    {
+        if ($this->isAdmin() && $this->actingCompanyId() === null) {
+            return true;
+        }
+
+        $companyId = $this->visibleCompanyId();
+
+        return $companyId !== null
+            && (bool) Company::whereKey($companyId)->value('operation_module');
+    }
+
     public function canSeeVehicle(Vehicle $vehicle): bool
     {
         return $this->visibleVehicles()->whereKey($vehicle->id)->exists();

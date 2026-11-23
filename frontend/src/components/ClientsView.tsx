@@ -184,6 +184,7 @@ function CompanyDetail({ companyId, currentUserId, onChanged }: { companyId: num
                   .filter(Boolean)
                   .join(' · ')}
               />
+              <Field label="Módulos" value={company.operation_module ? 'BASE + Operación' : 'BASE'} />
               <Field label="Estado" value={company.status === 'active' ? 'Activa' : 'Suspendida'} />
               {company.notes && <Field label="Notas" value={company.notes} />}
             </dl>
@@ -483,6 +484,8 @@ function CompanyForm({
     contact_phone: initial?.contact_phone ?? '',
     plan: initial?.plan ?? '',
     monthly_price: initial?.monthly_price ?? null,
+    // Las empresas nuevas empiezan solo con la BASE
+    operation_module: initial?.operation_module ?? false,
     status: initial?.status ?? 'active',
     notes: initial?.notes ?? '',
   })
@@ -551,6 +554,18 @@ function CompanyForm({
           </label>
         )}
       </div>
+      <label className="flex cursor-pointer items-center gap-2">
+        <input
+          type="checkbox"
+          checked={data.operation_module ?? false}
+          onChange={(e) => setData((d) => ({ ...d, operation_module: e.target.checked }))}
+          className="accent-ok"
+        />
+        <span>
+          Módulo Operación
+          <span className="text-ink-muted"> (servicios detectados, no-shows y predicciones de llegada)</span>
+        </span>
+      </label>
       <label className="flex flex-col gap-1">
         <span className="text-ink-muted">Notas</span>
         <textarea value={data.notes ?? ''} onChange={(e) => set('notes')(e.target.value)} rows={2} className={input} />

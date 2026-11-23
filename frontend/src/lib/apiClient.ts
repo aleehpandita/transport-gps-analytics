@@ -259,6 +259,7 @@ export interface CompanyInput {
   contact_phone?: string | null
   plan?: string | null
   monthly_price?: number | null
+  operation_module?: boolean
   status?: 'active' | 'suspended'
   notes?: string | null
 }

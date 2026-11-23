@@ -89,6 +89,8 @@ class AuthController extends Controller
             'email' => $user->email,
             'role' => $user->role,
             'can_edit' => $user->canEdit(),
+            // Módulo de Operación de la empresa que ve (en "Ver como", la del cliente)
+            'has_operation' => $user->hasOperationModule(),
             'company' => $user->company ? ['id' => $user->company->id, 'name' => $user->company->name] : null,
             // Solo admins: la empresa que está viendo como cliente
             'acting_company' => $acting ? ['id' => $acting->id, 'name' => $acting->name] : null,
