@@ -211,6 +211,10 @@ interface VehicleMarkerProps {
   children: ReactNode
 }
 
+// Escala de los carritos en el mapa (1 = 22×42 px la van)
+const ICON_SCALE = 0.62
+const ICON_SCALE_SELECTED = 0.8
+
 // La unidad vista desde arriba, del color que eligió el cliente, girada hacia donde va y con
 // su nombre encima. Con alerta sin leer parpadea con un halo rojo. Sin señal se ve deslavada.
 // Se desliza entre posiciones.
@@ -252,7 +256,8 @@ function VehicleMarker({ name, lat, lng, course, status, icon, color, alarm, sel
   const heading = Math.round(course / 5) * 5
 
   const leafletIcon = useMemo(() => {
-    const scale = selected ? 1.2 : 1
+    // Tamaño en el mapa: más chico que el dibujo base para no tapar las calles
+    const scale = selected ? ICON_SCALE_SELECTED : ICON_SCALE
     // Cuadro donde gira el carrito: cabe a lo largo en cualquier ángulo
     const box = Math.round(ICON_SIZE[icon][1] * scale) + 6
     const accent = color ?? DEFAULT_VEHICLE_COLOR
