@@ -39,7 +39,11 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'theme',
     ];
+
+    // Apariencia del panel, por usuario
+    public const THEMES = ['light', 'dark'];
 
     /**
      * The attributes that should be hidden for serialization.

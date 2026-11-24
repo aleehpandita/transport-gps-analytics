@@ -9,6 +9,7 @@ import { LoginScreen } from './components/LoginScreen'
 import { OperationsView } from './components/OperationsView'
 import { ReportsView } from './components/ReportsView'
 import { AUTH_EXPIRED_EVENT, fetchMe, logout } from './lib/apiClient'
+import { applyTheme } from './lib/theme'
 import type { User } from './types/api'
 
 type AuthState =
@@ -62,12 +63,18 @@ export default function App() {
   const [auth, setAuth] = useState<AuthState>({ status: 'checking' })
   const route = useHashRoute()
 
+  // Al entrar, el tema que el usuario eligió (se guarda por usuario en el servidor)
+  function signIn(user: User) {
+    applyTheme(user.theme)
+    setAuth({ status: 'authenticated', user })
+  }
+
   // Al abrir: si la cookie de sesión sigue viva, entra directo sin pedir contraseña
   useEffect(() => {
     const controller = new AbortController()
 
     fetchMe(controller.signal)
-      .then((user) => setAuth({ status: 'authenticated', user }))
+      .then(signIn)
       .catch(() => {
         if (!controller.signal.aborted) setAuth({ status: 'guest' })
       })
@@ -96,7 +103,7 @@ export default function App() {
   }
 
   if (auth.status === 'guest') {
-    return <LoginScreen onLoggedIn={(user) => setAuth({ status: 'authenticated', user })} />
+    return <LoginScreen onLoggedIn={signIn} />
   }
 
   // Administración: cada página solo para su rol; con otro rol se queda en el mapa

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AlertController;
 use App\Http\Controllers\Api\AlertRuleController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyUserController;
+use App\Http\Controllers\Api\CompanyVehicleController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\FleetReportController;
 use App\Http\Controllers\Api\GeofenceController;
@@ -27,6 +28,7 @@ Route::post('/login', [AuthController::class, 'login']);
 // Todo lo demás requiere sesión. Cada controlador filtra por las unidades del usuario.
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
+    Route::patch('/me/preferences', [AuthController::class, 'preferences']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
     // Antes del grupo de /vehicles/{vehicle}: si no, "live" se tomaría como el id de una unidad
@@ -91,6 +93,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // El dueño de cada empresa administra a sus usuarios
     Route::middleware('company.owner')->prefix('company')->group(function () {
+        Route::get('/vehicles', [CompanyVehicleController::class, 'index']);
+        Route::patch('/vehicles/{vehicle}', [CompanyVehicleController::class, 'update']);
         Route::get('/users', [CompanyUserController::class, 'index']);
         Route::post('/users', [CompanyUserController::class, 'store']);
         Route::patch('/users/{user}', [CompanyUserController::class, 'update']);

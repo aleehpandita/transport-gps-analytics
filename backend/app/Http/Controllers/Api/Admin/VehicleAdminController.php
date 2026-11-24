@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
  *   GET   /api/admin/vehicles?unassigned=1         unidades sin empresa (para asignarlas)
  *   POST  /api/admin/companies/{company}/vehicles  {vehicle_id} asigna una que ya existe, o
  *                                                  {name, imei, plate?} da de alta un equipo nuevo en Traccar
- *   PATCH /api/admin/vehicles/{vehicle}            nombre, placas, marca, modelo, activa o empresa
+ *   PATCH /api/admin/vehicles/{vehicle}            nombre, placas, marca, modelo, ícono, color, activa o empresa
  */
 class VehicleAdminController extends Controller
 {
@@ -70,6 +70,8 @@ class VehicleAdminController extends Controller
             'plate' => ['nullable', 'string', 'max:20'],
             'make' => ['nullable', 'string', 'max:60'],
             'model' => ['nullable', 'string', 'max:60'],
+            'icon' => ['sometimes', Rule::in(Vehicle::ICONS)],
+            'color' => ['sometimes', 'nullable', Vehicle::COLOR_RULE],
             'active' => ['sometimes', 'boolean'],
             'company_id' => ['sometimes', 'nullable', 'integer', Rule::exists('companies', 'id')],
         ]);

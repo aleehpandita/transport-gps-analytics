@@ -78,6 +78,8 @@ class AccountService
             'imei' => $vehicle->imei,
             'make' => $vehicle->make,
             'model' => $vehicle->model,
+            'icon' => $vehicle->icon ?? Vehicle::ICON_VAN,
+            'color' => $vehicle->color,
             'active' => (bool) $vehicle->active,
             'traccar_device_id' => $vehicle->traccar_device_id,
             'last_report_at' => $last ? Carbon::parse($last)->toIso8601String() : null,

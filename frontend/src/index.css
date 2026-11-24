@@ -20,6 +20,29 @@
   --color-late: #e5566b;
 }
 
+/* Tema claro (el de los usuarios nuevos). Cambia los mismos colores del @theme, así que
+   todas las clases de Tailwind (bg-surface, text-ink, border-line...) siguen funcionando.
+   El tema se pone en <html data-theme="light|dark"> desde lib/theme.ts. */
+:root[data-theme='light'] {
+  --color-base: #f3f5f9;
+  --color-surface: #ffffff;
+  --color-surface-raised: #eef1f6;
+  --color-line: #d8dde7;
+  --color-ink: #141a2a;
+  --color-ink-muted: #5d6780;
+  --color-accent: #5a49e0;
+
+  --color-ok: #138a5e;
+  --color-risk: #b9770e;
+  --color-late: #cf3049;
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
 html,
 body,
 #root {
@@ -40,9 +63,10 @@ body {
   background: var(--color-base);
 }
 
-/* Mapa oscuro a partir de los tiles claros de OpenStreetMap.
-   Solo afecta la capa de imágenes; los marcadores conservan su color. */
-.map-tiles-dark {
+/* Mapa oscuro a partir de los tiles claros de OpenStreetMap, solo en el tema oscuro.
+   En el claro se ve el OpenStreetMap normal. Solo afecta la capa de imágenes; los
+   marcadores conservan su color. */
+:root[data-theme='dark'] .map-tiles-dark {
   filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.5);
 }
 

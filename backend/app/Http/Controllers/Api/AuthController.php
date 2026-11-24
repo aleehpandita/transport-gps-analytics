@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -79,6 +80,21 @@ class AuthController extends Controller
         return response()->json(['message' => 'Sesión cerrada.']);
     }
 
+    /**
+     * PATCH /api/me/preferences {theme}: claro u oscuro. Se guarda por usuario para que
+     * el panel se vea igual en el celular y en la computadora.
+     */
+    public function preferences(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'theme' => ['required', Rule::in(User::THEMES)],
+        ]);
+
+        $request->user()->update($validated);
+
+        return response()->json(['data' => $this->userPayload($request->user())]);
+    }
+
     protected function userPayload(User $user): array
     {
         $acting = $user->actingCompanyId() ? Company::find($user->actingCompanyId()) : null;
@@ -88,6 +104,7 @@ class AuthController extends Controller
             'name' => $user->name,
             'email' => $user->email,
             'role' => $user->role,
+            'theme' => $user->theme ?? 'light',
             'can_edit' => $user->canEdit(),
             // Módulo de Operación de la empresa que ve (en "Ver como", la del cliente)
             'has_operation' => $user->hasOperationModule(),

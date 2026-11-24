@@ -1,5 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { CircleMarker, LayersControl, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { memo, useEffect, useMemo, useRef } from 'react'
+import { CircleMarker, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import L, { type LatLngTuple } from 'leaflet'
 import type { RoutePoint, RouteTrip } from '../types/api'
 import { indexAt, type PlaybackFrame } from '../hooks/usePlayback'
@@ -24,8 +24,6 @@ const STOP_MARK_SECONDS = 180
 
 const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-// Misma preferencia de mapa base que el mapa en vivo (FleetMap)
-const BASE_LAYER_STORAGE_KEY = 'fleet-map:base-layer'
 
 interface Segment {
   color: string
@@ -43,8 +41,6 @@ interface RouteMapProps {
 }
 
 export function RouteMap({ points, trips, selectedTripId, frame, follow }: RouteMapProps) {
-  const [initialBase] = useState(readBaseLayer)
-
   return (
     <MapContainer
       center={[21.1619, -86.8515]}
@@ -53,15 +49,8 @@ export function RouteMap({ points, trips, selectedTripId, frame, follow }: Route
       preferCanvas // miles de tramos: el lienzo dibuja mucho más rápido que SVG
       className="h-full min-h-[300px] w-full"
     >
-      <LayersControl position="topright">
-        <LayersControl.BaseLayer name="Oscuro" checked={initialBase === 'dark'}>
-          <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_URL} className="map-tiles-dark" />
-        </LayersControl.BaseLayer>
-        <LayersControl.BaseLayer name="Claro" checked={initialBase === 'light'}>
-          <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_URL} />
-        </LayersControl.BaseLayer>
-      </LayersControl>
-      <RememberBaseLayer />
+      {/* Claro u oscuro según el tema del panel (index.css) */}
+      <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_URL} className="map-tiles-dark" />
       <InvalidateOnResize />
 
       <RouteLayer points={points} trips={trips} selectedTripId={selectedTripId} />
@@ -208,27 +197,6 @@ function InvalidateOnResize() {
   }, [map])
 
   return null
-}
-
-function RememberBaseLayer() {
-  useMapEvents({
-    baselayerchange: (event) => {
-      try {
-        localStorage.setItem(BASE_LAYER_STORAGE_KEY, event.name === 'Claro' ? 'light' : 'dark')
-      } catch {
-        // Sin almacenamiento: solo no se recuerda
-      }
-    },
-  })
-  return null
-}
-
-function readBaseLayer(): 'dark' | 'light' {
-  try {
-    return localStorage.getItem(BASE_LAYER_STORAGE_KEY) === 'light' ? 'light' : 'dark'
-  } catch {
-    return 'dark'
-  }
 }
 
 function speedColor(speed: number): string {

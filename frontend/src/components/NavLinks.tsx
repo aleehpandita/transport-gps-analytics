@@ -4,7 +4,8 @@
 // ese módulo.
 
 import { useEffect, useState } from 'react'
-import { fetchUnreadAlerts, viewAsCompany } from '../lib/apiClient'
+import { fetchUnreadAlerts, updateTheme, viewAsCompany } from '../lib/apiClient'
+import { applyTheme, currentTheme, type Theme } from '../lib/theme'
 import type { User } from '../types/api'
 
 export type Page = 'live' | 'history' | 'operation' | 'reports' | 'events' | 'alerts' | 'clients' | 'users'
@@ -73,7 +74,7 @@ const LINKS: NavLink[] = [
   {
     page: 'users',
     href: '#/usuarios',
-    label: 'Usuarios',
+    label: 'Mi empresa',
     // Personas
     icon: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M22 21v-2a4 4 0 0 0-3-3.9 M16 3.1a4 4 0 0 1 0 7.8',
     visible: (user) => user.role === 'owner',
@@ -153,7 +154,41 @@ export function NavLinks({ current, user }: { current: Page; user?: User }) {
           </a>
         )
       })}
+      {user && <ThemeToggle initial={user.theme} />}
     </nav>
+  )
+}
+
+// Sol / luna: cambia todo el panel y el mapa al momento y lo guarda para este usuario
+function ThemeToggle({ initial }: { initial: Theme }) {
+  const [theme, setTheme] = useState<Theme>(() => (document.documentElement.dataset.theme ? currentTheme() : initial))
+  const next: Theme = theme === 'dark' ? 'light' : 'dark'
+
+  function toggle() {
+    applyTheme(next)
+    setTheme(next)
+    // Si no se guarda (sin red), en este navegador se queda igual; no vale la pena avisar
+    updateTheme(next).catch(() => undefined)
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={next === 'dark' ? 'Cambiar a oscuro' : 'Cambiar a claro'}
+      aria-label={next === 'dark' ? 'Cambiar a tema oscuro' : 'Cambiar a tema claro'}
+      className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-md border border-line text-ink-muted hover:bg-surface-raised hover:text-ink"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {theme === 'dark' ? (
+          // Sol: estás en oscuro, pásate a claro
+          <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z M12 2v2 M12 20v2 M4.9 4.9l1.4 1.4 M17.7 17.7l1.4 1.4 M2 12h2 M20 12h2 M4.9 19.1l1.4-1.4 M17.7 6.3l1.4-1.4" />
+        ) : (
+          // Luna: estás en claro, pásate a oscuro
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+        )}
+      </svg>
+    </button>
   )
 }
 function UnreadBadge({ count }: { count: number }) {

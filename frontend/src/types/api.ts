@@ -24,11 +24,24 @@ export interface Vehicle {
   plate: string | null
   make: string | null
   model: string | null
+  icon: VehicleIcon
+  color: string | null // #rrggbb que eligió el cliente; null = verde de siempre
   active: boolean
   distance_today_km: number
   latest_position: LatestPosition | null
   current_zone: Zone | null // zona de la última posición (punto, polígono o área)
   stopped_since: string | null // ISO 8601 en UTC; null si la última posición va en movimiento
+  active_alert?: ActiveAlert | null // alerta sin leer de las últimas 24 h: la unidad parpadea
+}
+
+// Cómo se dibuja la unidad en el mapa (vista desde arriba)
+export type VehicleIcon = 'van' | 'sedan'
+
+export interface ActiveAlert {
+  id: number
+  type: string
+  message: string
+  triggered_at: string
 }
 
 // GET /api/vehicles/live: última posición de cada unidad, leída directo de Traccar
@@ -128,6 +141,7 @@ export interface User {
   name: string
   email: string
   role: UserRole
+  theme: 'light' | 'dark'
   can_edit: boolean // confirmar servicios y marcar viajes (todos menos solo lectura)
   // Módulo de Operación de la empresa que ve (en "Ver como", la del cliente). Sin él solo
   // tiene la BASE: no ve la pestaña Operación ni las Predicciones de llegada.
@@ -158,6 +172,8 @@ export interface AdminVehicle {
   imei: string | null
   make: string | null
   model: string | null
+  icon: VehicleIcon
+  color: string | null
   active: boolean
   traccar_device_id: number | null
   last_report_at: string | null

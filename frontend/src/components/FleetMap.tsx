@@ -12,7 +12,8 @@ import {
   useMapEvents,
 } from 'react-leaflet'
 import L, { type LatLngTuple } from 'leaflet'
-import type { MapZone, Vehicle } from '../types/api'
+import type { MapZone, Vehicle, VehicleIcon } from '../types/api'
+import { DEFAULT_VEHICLE_COLOR, ICON_SIZE, vehicleSvg } from '../lib/vehicleIcon'
 import { formatLastSeen, formatSpeed } from '../lib/format'
 import { statusLabel, vehicleStatus, type VehicleStatus } from '../lib/vehicleStatus'
 
@@ -29,27 +30,6 @@ const GLIDE_MS = 4_500
 // se coloca directo en lugar de cruzar la ciudad volando.
 const MAX_GLIDE_METERS = 2_000
 
-// Mismos valores que los colores de estado en index.css (@theme).
-// Leaflet dibuja los íconos como HTML suelto, donde las clases de Tailwind no aplican.
-const STATUS_COLOR: Record<VehicleStatus, string> = {
-  moving: '#3fb68b',
-  stopped: '#3fb68b',
-  parked: '#e3a946',
-  stale: '#e5566b',
-  unknown: '#8792ad',
-}
-
-// Camioneta vista de lado, en blanco, para ir dentro del círculo de color
-const VAN_SVG = `
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"
-       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M3 16V7a1 1 0 0 1 1-1h11l4 4h1a1 1 0 0 1 1 1v5" />
-    <path d="M15 6v4h5" />
-    <path d="M3 16h2m4 0h6m4 0h2" />
-    <circle cx="7" cy="17" r="2" />
-    <circle cx="17" cy="17" r="2" />
-  </svg>`
-
 // Estilos que Leaflet necesita como CSS normal: el pulso de los íconos (HTML suelto, sin
 // Tailwind) y las etiquetas de zona (tooltips de Leaflet sin su caja blanca por defecto).
 const MAP_CSS = `
@@ -57,8 +37,22 @@ const MAP_CSS = `
     0% { transform: scale(1); opacity: .6; }
     100% { transform: scale(2.2); opacity: 0; }
   }
+  /* Alerta sin leer: halo rojo que late y la unidad parpadea, como alarma */
+  @keyframes fleet-alarm-halo {
+    0% { transform: scale(.6); opacity: .85; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
+  @keyframes fleet-alarm-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .35; }
+  }
+  .fleet-alarm-halo { animation: fleet-alarm-halo 1s ease-out infinite; }
+  .fleet-alarm-blink { animation: fleet-alarm-blink 1s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce) {
     .fleet-pulse { animation: none !important; display: none; }
+    /* Sin animación: el halo rojo se queda fijo para que la alerta se siga notando */
+    .fleet-alarm-halo { animation: none !important; transform: scale(1.1); opacity: .6; }
+    .fleet-alarm-blink { animation: none !important; }
   }
   .zone-label {
     background: transparent;
@@ -73,14 +67,6 @@ const MAP_CSS = `
   }
   .zone-label::before { display: none; }`
 
-// Mapas base. "Oscuro" es el de siempre con el filtro de index.css; "Claro" es el
-// OpenStreetMap normal, igual al de Traccar, que se lee mejor de día y en el celular.
-const BASE_LAYERS = {
-  dark: 'Oscuro',
-  light: 'Claro',
-} as const
-type BaseLayerKey = keyof typeof BASE_LAYERS
-
 const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 
@@ -88,27 +74,6 @@ const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright
 const ZONE_COLOR = '#9aa4bf'
 // Radio por defecto de las zonas por punto, igual que ZoneMatchingService
 const DEFAULT_POINT_RADIUS_KM = 0.5
-
-// El mapa base elegido se recuerda en este navegador. Si el almacenamiento no está
-// disponible (navegación privada, por ejemplo), simplemente arranca en oscuro.
-const BASE_LAYER_STORAGE_KEY = 'fleet-map:base-layer'
-
-function readBaseLayer(): BaseLayerKey {
-  try {
-    const saved = localStorage.getItem(BASE_LAYER_STORAGE_KEY)
-    return saved === 'light' || saved === 'dark' ? saved : 'dark'
-  } catch {
-    return 'dark'
-  }
-}
-
-function saveBaseLayer(key: BaseLayerKey): void {
-  try {
-    localStorage.setItem(BASE_LAYER_STORAGE_KEY, key)
-  } catch {
-    // Sin almacenamiento: no pasa nada, solo no se recuerda
-  }
-}
 
 export interface MapFocus {
   id: number
@@ -122,8 +87,6 @@ interface FleetMapProps {
 }
 
 export function FleetMap({ vehicles, zones = [], focus = null }: FleetMapProps) {
-  const [initialBaseLayer] = useState(readBaseLayer)
-
   // Seguir a la unidad elegida: se prende con cada clic en la tabla y se apaga en cuanto
   // el usuario arrastra el mapa (quiere ver otra cosa) o con el botón "Dejar de seguir".
   // Se guarda el "at" del clic que lo prendió: un clic nuevo vuelve a seguir sin un efecto.
@@ -151,14 +114,11 @@ export function FleetMap({ vehicles, zones = [], focus = null }: FleetMapProps) 
         scrollWheelZoom
         className="h-full min-h-[320px] w-full rounded-b-lg"
       >
-        {/* Selector de la esquina superior derecha: mapa base y capa de zonas */}
+        {/* Mapa claro u oscuro según el tema del panel (index.css) */}
+        <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_URL} className="map-tiles-dark" />
+
+        {/* Esquina superior derecha: mostrar u ocultar las zonas */}
         <LayersControl position="topright">
-          <LayersControl.BaseLayer name={BASE_LAYERS.dark} checked={initialBaseLayer === 'dark'}>
-            <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_URL} className="map-tiles-dark" />
-          </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer name={BASE_LAYERS.light} checked={initialBaseLayer === 'light'}>
-            <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_URL} />
-          </LayersControl.BaseLayer>
 
           <LayersControl.Overlay name="Zonas" checked>
             <LayerGroup>
@@ -166,8 +126,6 @@ export function FleetMap({ vehicles, zones = [], focus = null }: FleetMapProps) 
             </LayerGroup>
           </LayersControl.Overlay>
         </LayersControl>
-
-        <RememberBaseLayer />
 
         <FitToPoints points={points.map(({ position }) => [position.latitude, position.longitude])} />
 
@@ -195,8 +153,17 @@ export function FleetMap({ vehicles, zones = [], focus = null }: FleetMapProps) 
             lng={position.longitude}
             course={position.course}
             status={status}
+            icon={vehicle.icon ?? 'van'}
+            color={vehicle.color}
+            alarm={Boolean(vehicle.active_alert)}
             selected={vehicle.id === focus?.id}
           >
+            {vehicle.active_alert && (
+              <>
+                <strong style={{ color: '#e5566b' }}>⚠ {vehicle.active_alert.message}</strong>
+                <br />
+              </>
+            )}
             <strong>{vehicle.name}</strong>
             {vehicle.current_zone && <> · {vehicle.current_zone.name}</>}
             <br />
@@ -237,13 +204,17 @@ interface VehicleMarkerProps {
   lng: number
   course: number
   status: VehicleStatus
+  icon: VehicleIcon
+  color: string | null
+  alarm: boolean // alerta sin leer: parpadea con halo rojo
   selected: boolean
   children: ReactNode
 }
 
-// Círculo del color del estado con una camioneta blanca y el nombre debajo.
-// En ruta: flecha hacia donde va y un pulso alrededor. Se desliza entre posiciones.
-function VehicleMarker({ name, lat, lng, course, status, selected, children }: VehicleMarkerProps) {
+// La unidad vista desde arriba, del color que eligió el cliente, girada hacia donde va y con
+// su nombre encima. Con alerta sin leer parpadea con un halo rojo. Sin señal se ve deslavada.
+// Se desliza entre posiciones.
+function VehicleMarker({ name, lat, lng, course, status, icon, color, alarm, selected, children }: VehicleMarkerProps) {
   const markerRef = useRef<L.Marker | null>(null)
 
   // React-Leaflet movería el marcador de golpe si cambiara "position", así que se le da
@@ -276,54 +247,58 @@ function VehicleMarker({ name, lat, lng, course, status, selected, children }: V
     return () => cancelAnimationFrame(frame)
   }, [lat, lng])
 
-  const moving = status === 'moving'
+  const stale = status === 'stale' || status === 'unknown'
   // Redondeado a 5° para no recrear el ícono por cambios de rumbo que no se notan
   const heading = Math.round(course / 5) * 5
 
-  const icon = useMemo(() => {
-    const size = selected ? 40 : 32
-    const color = STATUS_COLOR[status]
-    const ring = selected ? `0 0 0 4px ${color}55,` : ''
+  const leafletIcon = useMemo(() => {
+    const scale = selected ? 1.2 : 1
+    // Cuadro donde gira el carrito: cabe a lo largo en cualquier ángulo
+    const box = Math.round(ICON_SIZE[icon][1] * scale) + 6
+    const accent = color ?? DEFAULT_VEHICLE_COLOR
 
-    const pulse = moving
-      ? `<div class="fleet-pulse" style="position:absolute;inset:0;border-radius:9999px;background:${color};
-                      animation:fleet-pulse 1.8s ease-out infinite"></div>`
+    const halo = alarm
+      ? `<div class="fleet-alarm-halo" style="position:absolute;inset:-6px;border-radius:9999px;
+                    background:radial-gradient(circle, rgba(229,86,107,.75) 0%, rgba(229,86,107,.35) 45%, rgba(229,86,107,0) 70%)"></div>`
       : ''
 
-    // Triángulo en el borde del círculo, girado según el rumbo (0° = norte)
-    const arrow = moving
-      ? `<div style="position:absolute;inset:-9px;transform:rotate(${heading}deg)">
-           <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:0;height:0;
-                       border-left:6px solid transparent;border-right:6px solid transparent;
-                       border-bottom:9px solid ${color};filter:drop-shadow(0 0 1px #fff)"></div>
-         </div>`
+    // Elegida en la tabla: un aro suave del color de la unidad
+    const ring = selected
+      ? `<div style="position:absolute;inset:-2px;border-radius:9999px;border:3px solid ${accent};opacity:.45"></div>`
       : ''
+
+    const carStyle = [
+      'position:absolute;inset:0;display:flex;align-items:center;justify-content:center',
+      `transform:rotate(${heading}deg)`,
+      'filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))',
+      stale ? 'opacity:.55' : '',
+    ].join(';')
 
     return L.divIcon({
       className: '', // sin el fondo blanco por defecto de leaflet-div-icon
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2],
-      tooltipAnchor: [0, -size / 2],
+      iconSize: [box, box],
+      iconAnchor: [box / 2, box / 2],
+      tooltipAnchor: [0, -box / 2],
       html: `
-        <div style="position:relative;width:${size}px;height:${size}px">
-          ${pulse}
-          ${arrow}
-          <div style="position:relative;width:100%;height:100%;border-radius:9999px;background:${color};
-                      border:2px solid #fff;box-shadow:${ring}0 2px 6px rgba(0,0,0,.55);
-                      display:flex;align-items:center;justify-content:center">
-            ${VAN_SVG}
+        <div style="position:relative;width:${box}px;height:${box}px">
+          ${halo}
+          ${ring}
+          <div class="${alarm ? 'fleet-alarm-blink' : ''}" style="${carStyle}">
+            ${vehicleSvg(icon, color, scale)}
           </div>
-          <div style="position:absolute;top:${size + 4}px;left:50%;transform:translateX(-50%);
-                      white-space:nowrap;padding:1px 6px;border-radius:4px;background:rgba(15,18,28,.85);
-                      color:#fff;font:600 11px/16px system-ui,sans-serif">
+          <div style="position:absolute;bottom:${box + 2}px;left:50%;transform:translateX(-50%);
+                      white-space:nowrap;padding:1px 7px;border-radius:9999px;
+                      background:${alarm ? '#e5566b' : 'rgba(255,255,255,.95)'};
+                      color:${alarm ? '#fff' : '#141a2a'};border:1.5px solid ${alarm ? '#e5566b' : accent};
+                      box-shadow:0 1px 3px rgba(0,0,0,.35);font:600 11px/15px system-ui,sans-serif">
             ${escapeHtml(name)}
           </div>
         </div>`,
     })
-  }, [name, status, selected, moving, heading])
+  }, [name, icon, color, alarm, stale, selected, heading])
 
   return (
-    <Marker ref={markerRef} position={initialPosition} icon={icon} zIndexOffset={selected ? 1000 : 0}>
+    <Marker ref={markerRef} position={initialPosition} icon={leafletIcon} zIndexOffset={alarm ? 2000 : selected ? 1000 : 0}>
       <Tooltip direction="top">{children}</Tooltip>
     </Marker>
   )
@@ -373,18 +348,6 @@ function ZonesLayer({ zones }: { zones: MapZone[] }) {
       })}
     </>
   )
-}
-
-// Guarda el mapa base que elige el usuario, para abrir con el mismo la próxima vez
-function RememberBaseLayer() {
-  useMapEvents({
-    baselayerchange: (event) => {
-      const key = (Object.keys(BASE_LAYERS) as BaseLayerKey[]).find((k) => BASE_LAYERS[k] === event.name)
-      if (key) saveBaseLayer(key)
-    },
-  })
-
-  return null
 }
 
 // Encuadra el mapa una sola vez, cuando llegan las primeras posiciones.

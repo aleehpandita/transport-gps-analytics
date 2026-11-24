@@ -6,11 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\PositionResource;
 use App\Http\Resources\TripResource;
 use App\Http\Resources\VehicleResource;
+use App\Models\Alert;
 use App\Models\Place;
 use App\Models\Vehicle;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
@@ -19,19 +21,44 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  */
 class VehicleController extends Controller
 {
+    // Horas que una alerta sin leer hace parpadear a la unidad en el mapa
+    protected const ACTIVE_ALERT_HOURS = 24;
+
     public function index(Request $request): AnonymousResourceCollection
     {
         [$startOfDay, $endOfDay] = $this->todayRangeInCancun();
 
-        return VehicleResource::collection(
-            $request->user()->visibleVehicles()
-                ->where('active', true)
-                ->with('latestPosition')
-                ->withSum(['trips as distance_today_km' => function ($query) use ($startOfDay, $endOfDay) {
-                    $query->whereBetween('started_at', [$startOfDay, $endOfDay])->where('data_source', 'real');
-                }], 'distance_km')
-                ->get()
-        );
+        $vehicles = $request->user()->visibleVehicles()
+            ->where('active', true)
+            ->with('latestPosition')
+            ->withSum(['trips as distance_today_km' => function ($query) use ($startOfDay, $endOfDay) {
+                $query->whereBetween('started_at', [$startOfDay, $endOfDay])->where('data_source', 'real');
+            }], 'distance_km')
+            ->get();
+
+        $this->attachActiveAlerts($vehicles);
+
+        return VehicleResource::collection($vehicles);
+    }
+
+    /**
+     * La alerta sin leer más reciente de cada unidad (de las últimas ACTIVE_ALERT_HOURS horas),
+     * en una sola consulta. En el mapa la unidad parpadea hasta que alguien la marca como leída
+     * en la bandeja. Las viejas sin leer no cuentan, para que no parpadee por algo de hace días.
+     *
+     * @param  Collection<int, Vehicle>  $vehicles
+     */
+    protected function attachActiveAlerts(Collection $vehicles): void
+    {
+        $alerts = Alert::whereIn('vehicle_id', $vehicles->modelKeys())
+            ->whereNull('read_at')
+            ->where('triggered_at', '>=', now()->subHours(self::ACTIVE_ALERT_HOURS))
+            ->orderByDesc('triggered_at')
+            ->get(['id', 'vehicle_id', 'type', 'message', 'triggered_at'])
+            ->unique('vehicle_id')
+            ->keyBy('vehicle_id');
+
+        $vehicles->each(fn (Vehicle $v) => $v->setRelation('activeAlert', $alerts->get($v->id)));
     }
 
     public function show(Request $request, Vehicle $vehicle): VehicleResource
