@@ -20,6 +20,11 @@ use Illuminate\Console\Command;
  *
  * Correr antes de subir cualquier cambio al Trip Builder o al clasificador: si un número
  * baja, el cambio rompió algo que ya funcionaba.
+ *
+ * Con --con-confirmaciones compara contra lo que ve el panel: los viajes marcados como
+ * servicio cuentan (con su tipo según la dirección) y los marcados como sin pasajeros o uso
+ * personal no. Sirve para revisar un día ya cerrado; NO para medir el detector, porque ahí
+ * manda lo que el sistema hace solo.
  */
 class EvaluateOperations extends Command
 {
@@ -27,7 +32,8 @@ class EvaluateOperations extends Command
         {--from= : Primer día (AAAA-MM-DD); por omisión, el primero con órdenes}
         {--to= : Último día (AAAA-MM-DD)}
         {--vehicle= : Parte del nombre de la unidad}
-        {--details : Muestra cada orden que no salió perfecta y cada servicio inventado}';
+        {--details : Muestra cada orden que no salió perfecta y cada servicio inventado}
+        {--con-confirmaciones : Toma en cuenta lo que se marcó en el panel (no sirve para medir el detector)}';
 
     protected $description = 'Compara las órdenes de servicio contra lo que detecta el GPS';
 
@@ -59,6 +65,11 @@ class EvaluateOperations extends Command
             return self::SUCCESS;
         }
 
+        $withReviews = (bool) $this->option('con-confirmaciones');
+        if ($withReviews) {
+            $this->info('Con las confirmaciones del panel: estos números no miden al detector.');
+        }
+
         $rows = [];
         $totals = array_fill_keys([...array_keys(self::LABELS), 'orders', 'extra', 'extra_probable', 'auto'], 0);
 
@@ -76,11 +87,16 @@ class EvaluateOperations extends Command
         for ($d = $first->subDay(); $d->lte($last); $d = $d->addDay()) {
             $date = $d->format('Y-m-d');
             $outside = $d->lt($first);
-            $day = $operations->forDay($date, $vehicles, withReviews: false);
+            $day = $operations->forDay($date, $vehicles, withReviews: $withReviews);
 
-            // Regresos desde un hotel: con la hoja pueden resultar la salida (ver OrderMatcher)
+            // Regresos desde un hotel: con la hoja pueden resultar la salida (ver OrderMatcher).
+            // Con confirmaciones, un regreso ya revisado no entra: si lo marcaron como servicio
+            // ya viene en 'services' como salida, y si lo marcaron vacío no es servicio.
             foreach ($day['legs'] as $l) {
                 if ($l['kind'] !== OperationClassifier::RETURN) {
+                    continue;
+                }
+                if ($withReviews && $l['review'] !== null) {
                     continue;
                 }
                 $serviceRows[] = [
@@ -100,6 +116,10 @@ class EvaluateOperations extends Command
             }
 
             foreach ($day['services'] as $s) {
+                // Lo que alguien marcó como sin pasajeros o uso personal no es servicio
+                if ($withReviews && in_array($s['review']['status'] ?? null, [OperationClassifier::REVIEW_EMPTY, OperationClassifier::REVIEW_PERSONAL], true)) {
+                    continue;
+                }
                 $serviceRows[] = [
                     'trip_id' => $s['trip_id'],
                     'vehicle_id' => $s['vehicle_id'],
