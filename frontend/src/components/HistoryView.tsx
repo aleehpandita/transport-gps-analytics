@@ -5,7 +5,7 @@ import { cancunToday, formatClock, formatDayLabel, formatDuration, shiftDate, to
 import { tripLabel } from '../lib/tripLabel'
 import type { RouteDay, RoutePoint, User, Vehicle } from '../types/api'
 import { DayTimeline } from './DayTimeline'
-import { NavLinks } from './NavLinks'
+import { PageHeader } from './PageHeader'
 import { RouteMap, SPEED_BANDS } from './RouteMap'
 
 // Movimientos cortos (acomodarse en el estacionamiento del aeropuerto, por ejemplo):
@@ -131,61 +131,67 @@ export function HistoryView({ user, initialVehicleId, initialDate, onLogout }: H
 
   return (
     <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
-      <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 lg:px-6">
-        <h1 className="text-lg font-semibold">Historial</h1>
+      <PageHeader title="Historial" current="history" user={user} onLogout={onLogout} />
 
-        <select
-          value={vehicleId ?? ''}
-          onChange={(e) => setVehicleId(Number(e.target.value))}
-          aria-label="Unidad"
-          className="rounded-md border border-line bg-surface-raised px-3 py-1.5"
-        >
-          {vehicles.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setDate(shiftDate(date, -1))}
-            aria-label="Día anterior"
-            className="rounded-md px-2 py-1.5 hover:bg-surface-raised"
+      {/* Qué unidad y qué día se ven. Va en su propia barra, debajo del menú, para que en el
+          celular no se pierda arriba entre los botones de navegación. */}
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3 border-b border-line bg-surface px-4 py-3 lg:px-6">
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-muted">
+          Unidad
+          <select
+            value={vehicleId ?? ''}
+            onChange={(e) => setVehicleId(Number(e.target.value))}
+            className="max-w-full rounded-md border border-line bg-surface-raised px-3 py-2 text-sm text-ink"
           >
-            ‹
-          </button>
-          <label className="relative">
-            <span className="rounded-md px-2 py-1.5 font-medium">{date === today ? 'Hoy' : formatDayLabel(date)}</span>
-            <input
-              type="date"
-              value={date}
-              max={today}
-              onChange={(e) => e.target.value && setDate(e.target.value)}
-              aria-label="Día"
-              className="absolute inset-0 cursor-pointer opacity-0"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => setDate(shiftDate(date, 1))}
-            disabled={date >= today}
-            aria-label="Día siguiente"
-            className="rounded-md px-2 py-1.5 hover:bg-surface-raised disabled:opacity-30"
-          >
-            ›
-          </button>
-        </div>
+            {vehicles.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
-        <div className="ml-auto flex flex-wrap items-center gap-3 text-sm text-ink-muted">
-          <NavLinks current="history" user={user} />
-          <span>{user.name}</span>
-          <button type="button" onClick={onLogout} className="rounded-md border border-line px-3 py-1 hover:bg-surface-raised">
-            Salir
-          </button>
+        <div className="flex flex-col gap-1 text-xs font-medium text-ink-muted">
+          <span id="history-day-label">Día</span>
+          <div className="flex items-center gap-1" role="group" aria-labelledby="history-day-label">
+            <button
+              type="button"
+              onClick={() => setDate(shiftDate(date, -1))}
+              aria-label="Día anterior"
+              className="rounded-md border border-line bg-surface-raised px-3 py-2 text-sm text-ink hover:brightness-125"
+            >
+              ‹
+            </button>
+            {/* El calendario nativo va encima, invisible: al tocar el botón se abre */}
+            <label className="relative flex cursor-pointer items-center gap-2 rounded-md border border-line bg-surface-raised px-3 py-2 text-sm text-ink hover:brightness-125">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+                <path d="M3.5 10h17 M8 3v4 M16 3v4" />
+              </svg>
+              <span className="font-medium whitespace-nowrap">
+                {date === today ? `Hoy, ${formatDayLabel(date)}` : formatDayLabel(date)}
+              </span>
+              <input
+                type="date"
+                value={date}
+                max={today}
+                onChange={(e) => e.target.value && setDate(e.target.value)}
+                aria-label="Elegir día"
+                className="absolute inset-0 cursor-pointer opacity-0"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => setDate(shiftDate(date, 1))}
+              disabled={date >= today}
+              aria-label="Día siguiente"
+              className="rounded-md border border-line bg-surface-raised px-3 py-2 text-sm text-ink hover:brightness-125 disabled:opacity-30"
+            >
+              ›
+            </button>
+          </div>
         </div>
-      </header>
+      </div>
 
       <div className="grid flex-1 lg:min-h-0 lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="flex max-h-[50vh] min-h-0 flex-col border-b border-line lg:max-h-none lg:border-r lg:border-b-0">
