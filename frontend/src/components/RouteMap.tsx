@@ -1,8 +1,9 @@
 import { memo, useEffect, useMemo, useRef } from 'react'
 import { CircleMarker, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import L, { type LatLngTuple } from 'leaflet'
-import type { RoutePoint, RouteTrip } from '../types/api'
+import type { RoutePoint, RouteTrip, VehicleIcon } from '../types/api'
 import { indexAt, type PlaybackFrame } from '../hooks/usePlayback'
+import { DEFAULT_VEHICLE_COLOR, ICON_SIZE, vehicleSvg } from '../lib/vehicleIcon'
 import { formatClock, formatDuration, toTimestamp } from '../lib/time'
 
 // Colores de la ruta por velocidad. Mismos verdes, ámbares y rojos que los estados del panel,
@@ -38,9 +39,11 @@ interface RouteMapProps {
   selectedTripId: number | null
   frame: PlaybackFrame | null
   follow: boolean
+  icon: VehicleIcon // el mismo carrito que el cliente eligió para la unidad
+  color: string | null
 }
 
-export function RouteMap({ points, trips, selectedTripId, frame, follow }: RouteMapProps) {
+export function RouteMap({ points, trips, selectedTripId, frame, follow, icon, color }: RouteMapProps) {
   return (
     <MapContainer
       center={[21.1619, -86.8515]}
@@ -55,7 +58,7 @@ export function RouteMap({ points, trips, selectedTripId, frame, follow }: Route
 
       <RouteLayer points={points} trips={trips} selectedTripId={selectedTripId} />
       <FitRoute points={points} trips={trips} selectedTripId={selectedTripId} />
-      {frame && <Playhead frame={frame} follow={follow} />}
+      {frame && <Playhead frame={frame} follow={follow} icon={icon} color={color} />}
     </MapContainer>
   )
 }
@@ -146,32 +149,49 @@ function FitRoute({
   return null
 }
 
-// La camioneta reproduciéndose: círculo con flecha de rumbo. Si "Seguir unidad" está
-// prendido, el mapa la acompaña (como mucho dos veces por segundo, para no marear).
-function Playhead({ frame, follow }: { frame: PlaybackFrame; follow: boolean }) {
+// Escala del carrito en la reproducción: un poco más grande que en el mapa en vivo (0.62),
+// porque aquí va encima de la ruta de colores y tiene que resaltar
+const PLAYHEAD_SCALE = 0.85
+
+// La unidad reproduciéndose: el mismo carrito y color que en el mapa en vivo, girado hacia
+// donde va, con un halo suave de su color para que no se pierda sobre la ruta.
+// Si "Seguir unidad" está prendido, el mapa la acompaña (como mucho dos veces por segundo).
+function Playhead({
+  frame,
+  follow,
+  icon,
+  color,
+}: {
+  frame: PlaybackFrame
+  follow: boolean
+  icon: VehicleIcon
+  color: string | null
+}) {
   const map = useMap()
   const lastPan = useRef(0)
+  // Redondeado a 5° para no recrear el ícono por cambios de rumbo que no se notan
   const heading = Math.round(frame.course / 5) * 5
 
-  const icon = useMemo(
-    () =>
-      L.divIcon({
-        className: '',
-        iconSize: [34, 34],
-        iconAnchor: [17, 17],
-        html: `
-          <div style="position:relative;width:34px;height:34px">
-            <div style="position:absolute;inset:-8px;transform:rotate(${heading}deg)">
-              <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:0;height:0;
-                          border-left:6px solid transparent;border-right:6px solid transparent;
-                          border-bottom:9px solid #fff"></div>
-            </div>
-            <div style="width:100%;height:100%;border-radius:9999px;background:#3fb68b;border:3px solid #fff;
-                        box-shadow:0 0 0 6px rgba(63,182,139,.25),0 2px 8px rgba(0,0,0,.6)"></div>
-          </div>`,
-      }),
-    [heading],
-  )
+  const leafletIcon = useMemo(() => {
+    // Cuadro donde gira el carrito: cabe a lo largo en cualquier ángulo
+    const box = Math.round(ICON_SIZE[icon][1] * PLAYHEAD_SCALE) + 8
+    const accent = color ?? DEFAULT_VEHICLE_COLOR
+
+    return L.divIcon({
+      className: '', // sin el fondo blanco por defecto de leaflet-div-icon
+      iconSize: [box, box],
+      iconAnchor: [box / 2, box / 2],
+      html: `
+        <div style="position:relative;width:${box}px;height:${box}px">
+          <div style="position:absolute;inset:2px;border-radius:9999px;background:${accent};opacity:.22;
+                      box-shadow:0 0 0 2px rgba(255,255,255,.85)"></div>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                      transform:rotate(${heading}deg);filter:drop-shadow(0 2px 3px rgba(0,0,0,.55))">
+            ${vehicleSvg(icon, color, PLAYHEAD_SCALE)}
+          </div>
+        </div>`,
+    })
+  }, [icon, color, heading])
 
   useEffect(() => {
     if (!follow) return
@@ -181,7 +201,7 @@ function Playhead({ frame, follow }: { frame: PlaybackFrame; follow: boolean }) 
     map.panTo([frame.lat, frame.lng], { animate: true, duration: 0.4 })
   }, [map, follow, frame.lat, frame.lng])
 
-  return <Marker position={[frame.lat, frame.lng]} icon={icon} interactive={false} zIndexOffset={1000} />
+  return <Marker position={[frame.lat, frame.lng]} icon={leafletIcon} interactive={false} zIndexOffset={1000} />
 }
 
 // Leaflet mide el mapa una sola vez, al montarse. Si después cambia de tamaño (la lista de
