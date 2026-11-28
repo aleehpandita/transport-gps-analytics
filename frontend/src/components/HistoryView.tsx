@@ -126,7 +126,8 @@ export function HistoryView({ user, initialVehicleId, initialDate, onLogout }: H
     return () => window.removeEventListener('keydown', onKey)
   }, [playback])
 
-  const vehicleName = vehicles.find((v) => v.id === vehicleId)?.name ?? 'la unidad'
+  const selectedVehicle = vehicles.find((v) => v.id === vehicleId)
+  const vehicleName = selectedVehicle?.name ?? 'la unidad'
 
   return (
     <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
@@ -285,7 +286,15 @@ export function HistoryView({ user, initialVehicleId, initialDate, onLogout }: H
 
         <section className="flex min-h-[70vh] flex-col lg:min-h-0" aria-label="Mapa del recorrido">
           <div className="relative min-h-0 flex-1">
-            <RouteMap points={points} trips={trips} selectedTripId={selectedTripId} frame={playback.frame} follow={follow} />
+            <RouteMap
+              points={points}
+              trips={trips}
+              selectedTripId={selectedTripId}
+              frame={playback.frame}
+              follow={follow}
+              icon={selectedVehicle?.icon ?? 'van'}
+              color={selectedVehicle?.color ?? null}
+            />
 
             <ul className="pointer-events-none absolute bottom-3 left-3 z-[1000] flex flex-col gap-1 rounded-md bg-surface/90 px-3 py-2 text-xs">
               {SPEED_BANDS.map((band) => (
